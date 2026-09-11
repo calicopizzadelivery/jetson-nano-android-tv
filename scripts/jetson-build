@@ -6,6 +6,7 @@
 #   ./scripts/jetson-build image     build the container image
 #   ./scripts/jetson-build up        start it in the background
 #   ./scripts/jetson-build shell     interactive shell inside it
+#   ./scripts/jetson-build doctor    verify the environment is usable
 #   ./scripts/jetson-build sync      repo init (first time) + repo sync
 #   ./scripts/jetson-build extract   breakfast + pull NVIDIA blobs
 #   ./scripts/jetson-build build     brunch the device
@@ -47,8 +48,14 @@ preflight() {
         [[ -O "$d" ]] || warn "$d is not owned by you — the container will not be able to write to it"
     done
 
-    if [[ "$HOST_UID" != "$(id -u)" || "$HOST_GID" != "$(id -g)" ]]; then
-        warn "HOST_UID/HOST_GID in .env ($HOST_UID:$HOST_GID) do not match your user ($(id -u):$(id -g));
+    # Read the primary gid out of passwd rather than using `id -g`, which
+    # reports the *effective* gid — that differs under `sg docker` / `newgrp`
+    # and would otherwise produce a bogus warning.
+    local real_uid real_gid
+    real_uid="$(id -u)"
+    real_gid="$(id -g "$(id -un)")"
+    if [[ "$HOST_UID" != "$real_uid" || "$HOST_GID" != "$real_gid" ]]; then
+        warn "HOST_UID/HOST_GID in .env ($HOST_UID:$HOST_GID) do not match your user ($real_uid:$real_gid);
          build output will come out owned by the wrong user. Fix .env, then re-run 'image'."
     fi
 
@@ -91,6 +98,10 @@ case "$cmd" in
     shell)
         ensure_up
         dc exec lineage bash -l
+        ;;
+    doctor)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/doctor.sh "$@"
         ;;
     sync)
         preflight; ensure_up

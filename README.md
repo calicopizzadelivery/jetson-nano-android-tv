@@ -77,6 +77,7 @@ ids so everything it writes into the bind-mounted tree comes out owned by you.
 ## Normal use
 
 ```bash
+./scripts/jetson-build doctor    # verify the environment before spending hours
 ./scripts/jetson-build sync      # repo init (first run) + repo sync   — hours
 ./scripts/jetson-build extract   # breakfast + pull the NVIDIA blobs   — ~20 min
 ./scripts/jetson-build build     # mka bacon                           — hours
@@ -116,11 +117,10 @@ That last point is why the Jetson Nano build has full hardware acceleration
 including Vulkan, while the Xavier and Orin trees do not — those SoCs have no
 NVIDIA Android userspace and are stuck on Mesa/nouveau.
 
-**Unverified:** `extract.sh` passes `-c /dlcache` to the Tegra
-`extract-files.sh` to keep downloads out of the tree. That flag is documented
-in the script's own option parsing, but I haven't run it. If it's rejected,
-the script falls back to a plain `./extract-files.sh` and the archives land
-wherever the tooling defaults to — harmless, just re-downloaded on a wipe.
+`extract.sh` passes `-c /dlcache` to the Tegra `extract-files.sh` to keep those
+downloads out of the tree. Verified against lineage-22.2: `porg`'s
+`extract-files.sh` execs into `tegra-common/extract/extract-files.sh`, which
+parses `-c | --cache-dir`, and defaults its source to `download`.
 
 ---
 
@@ -174,6 +174,7 @@ it's worth letting the first one grind.
     ├── jetson-build                  host-side driver (run this)
     ├── probe.sh                      read-only host report
     └── in-container/
+        ├── doctor.sh                 environment sanity checks
         ├── sync.sh                   repo init + sync
         ├── extract.sh                breakfast + blob extraction
         └── build.sh                  mka bacon

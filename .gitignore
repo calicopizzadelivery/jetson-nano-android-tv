@@ -4,6 +4,13 @@
 # Host report from scripts/probe.sh — machine-specific, not worth committing.
 probe-output.txt
 
+# Vendor hardware design packages (schematics, Gerbers, BOMs, layout databases)
+# downloaded from NVIDIA. Deliberately untracked: tens of MB of binaries that
+# would live in git history forever, and NVIDIA's design-file terms are not
+# something to redistribute from a public mirror. Fetch them from the Jetson
+# Download Center instead.
+hardware/
+
 # Never let a source tree, out/ or caches wander into this repo.
 lineage/
 out/

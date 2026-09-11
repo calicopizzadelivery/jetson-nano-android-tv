@@ -95,11 +95,22 @@ Design decisions worth preserving:
 - **Flashing stays on the host.** `tegraflash` needs USB recovery-mode access
   and udev rules; containerising it gains nothing.
 
+## Confirmed against upstream (2026-09-10, by reading the lineage-22.2 sources)
+
+- `device/nvidia/porg/extract-files.sh` is a one-line `exec` into
+  `device/nvidia/tegra-common/extract/extract-files.sh`, which **does** parse
+  `-c | --cache-dir` — so `extract.sh` passing `-c /dlcache` is correct. It also
+  has `-p | --prime-cache` if you ever want to pre-download the archives without
+  extracting.
+- That script defaults `SRC` to `download`, which is the mechanism behind
+  "no adb device needed".
+- There is **no `extract-files.py`** for `porg` on any of lineage-21/22.1/22.2,
+  so the `if [[ -x ./extract-files.py ]]` branch in `scripts/in-container/extract.sh`
+  is currently dead code. Harmless — upstream is migrating devices to the Python
+  extractor over time, so leave it for when `porg` follows.
+
 ## Unverified — confirm before relying on
 
-- `extract.sh` passes `-c /dlcache` to the Tegra `extract-files.sh`. The flag is
-  in that script's option parsing but has not been run. Falls back to a bare
-  invocation if rejected.
 - Whether `p3450.sh` SKU-2 detection works in practice on a production eMMC
   module. The XML layout exists (`flash_android_t210_emmc_p3448.xml`) and the
   script selects it by SKU, but this hasn't been exercised.
@@ -114,19 +125,33 @@ Done (2026-09-10):
   file modes normalised to 644/755 (they were 600 from the authoring session).
 - `.env` written for thebe — paths under `/srv/build/jetson-tv`, `JOBS` blank,
   `CCACHE_SIZE=100G`.
-- Build directories created on the SSD.
-- `scripts/host-setup.sh` written: the one-time root setup.
+- `scripts/host-setup.sh` written and **run**: Docker CE 29.8 + compose v2
+  installed, user in the `docker` group, SSD mounted at `/srv/build` via fstab,
+  build dirs created and chowned.
+- **Image builds.** `jetson-build image` → `jetson-tv/lineage-build:jammy`,
+  1.28 GB. All 61 apt package names verified against packages.ubuntu.com/jammy
+  first; all exist, `lib32ncurses5-dev` included.
+- **Container runs and passes `jetson-build doctor` 30/30** — uid/gid 1000
+  write-through to the host tree, `nofile` 32768, all three bind mounts
+  writable, `/opt/jetson-tv` read-only, full toolchain present, git identity
+  set, ccache at 100 GB.
+- Network from inside the container reaches GitHub; `lineage-22.2` confirmed to
+  exist on both the manifest and `android_device_nvidia_porg`. repo launcher
+  2.65, git 2.34.1, Python 3.10.12.
+- Git repo initialised, `.env` gitignored.
+
+Note for future sessions: **Claude's shell does not have the docker group**
+(the session predates the `usermod`). Prefix docker commands with
+`sg docker -c '...'`. Beware that `sg` changes the *effective* gid, which is
+why `jetson-build` reads the primary gid from passwd rather than `id -g`.
 
 Remaining:
 
-1. User runs `sudo BUILD_DISK_UUID=bb1724cf-… bash scripts/host-setup.sh`, then
-   re-logs in for docker group membership.
-2. `./scripts/jetson-build image` — first real test of the Dockerfile. Watch the
-   apt block: `lib32ncurses5-dev` is the package most likely not to exist in
-   jammy (it may need to be `lib32ncurses-dev`).
-3. `sync` → `extract` → `build`.
-4. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
-   of H.264/HEVC/VP9 samples.
+1. `./scripts/jetson-build sync` — first `repo sync`, several hours and a few
+   hundred GB. Not yet started.
+2. `extract` → `build`.
+3. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
+   of H.264/HEVC/VP9 samples. Hardware expected 2026-09-11.
 
 ## Reference
 
