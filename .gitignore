@@ -1,0 +1,16 @@
+# Local config — contains machine-specific paths and your git identity.
+.env
+
+# Host report from scripts/probe.sh — machine-specific, not worth committing.
+probe-output.txt
+
+# Never let a source tree, out/ or caches wander into this repo.
+lineage/
+out/
+ccache/
+dlcache/
+
+*.zip
+*.img
+*.tbz2
+*.txz

@@ -1,0 +1,42 @@
+name: jetson-tv
+
+services:
+  lineage:
+    build:
+      context: ./docker
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: jetson-tv/lineage-build:jammy
+    container_name: jetson-lineage-build
+    hostname: lineage-build
+    init: true
+    stdin_open: true
+    tty: true
+    working_dir: /srv/lineage
+
+    environment:
+      GIT_USER_NAME:  ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+      CCACHE_SIZE:    ${CCACHE_SIZE:-50G}
+      LINEAGE_BRANCH: ${LINEAGE_BRANCH:-lineage-22.2}
+      LINEAGE_DEVICE: ${LINEAGE_DEVICE:-porg}
+      JOBS:           ${JOBS:-}
+
+    volumes:
+      # The three big ones. All must exist on the host and be owned by you.
+      - ${SRC_DIR:?set SRC_DIR in .env}:/srv/lineage
+      - ${CCACHE_DIR:?set CCACHE_DIR in .env}:/ccache
+      - ${DL_CACHE_DIR:?set DL_CACHE_DIR in .env}:/dlcache
+      # Helper scripts, read-only so an in-container mistake can't edit them.
+      - ./scripts/in-container:/opt/jetson-tv:ro
+
+    # Soong opens a lot of files. The default 1024 will fail the build.
+    ulimits:
+      nofile:
+        soft: 32768
+        hard: 65536
+
+    # Stay up so `exec` and the devcontainer can attach. Real work is driven
+    # through scripts/jetson-build or from a shell inside.
+    command: ["sleep", "infinity"]

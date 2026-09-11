@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+#
+# Host-side driver for the containerised LineageOS build environment.
+# Run this from the host, not from inside the container.
+#
+#   ./scripts/jetson-build image     build the container image
+#   ./scripts/jetson-build up        start it in the background
+#   ./scripts/jetson-build shell     interactive shell inside it
+#   ./scripts/jetson-build sync      repo init (first time) + repo sync
+#   ./scripts/jetson-build extract   breakfast + pull NVIDIA blobs
+#   ./scripts/jetson-build build     brunch the device
+#   ./scripts/jetson-build all       sync -> extract -> build
+#   ./scripts/jetson-build status    disk, ccache and tree state
+#   ./scripts/jetson-build down      stop the container
+#
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+note() { printf '\033[36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+
+[[ -f .env ]] || die "no .env here — copy .env.example to .env and fill in the disk paths"
+
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
+
+: "${SRC_DIR:?SRC_DIR unset in .env}"
+: "${CCACHE_DIR:?CCACHE_DIR unset in .env}"
+: "${DL_CACHE_DIR:?DL_CACHE_DIR unset in .env}"
+
+dc() { docker compose "$@"; }
+
+preflight() {
+    command -v docker >/dev/null || die "docker not found on PATH"
+    docker compose version >/dev/null 2>&1 || die "docker compose v2 not available"
+
+    local d
+    for d in "$SRC_DIR" "$CCACHE_DIR" "$DL_CACHE_DIR"; do
+        [[ "$d" == *CHANGEME* ]] && die "$d still says CHANGEME — edit .env"
+        [[ -d "$d" ]] || die "missing directory: $d
+  create it first:  sudo mkdir -p '$d' && sudo chown -R \"\$(id -u):\$(id -g)\" '$d'"
+        [[ -O "$d" ]] || warn "$d is not owned by you — the container will not be able to write to it"
+    done
+
+    if [[ "$HOST_UID" != "$(id -u)" || "$HOST_GID" != "$(id -g)" ]]; then
+        warn "HOST_UID/HOST_GID in .env ($HOST_UID:$HOST_GID) do not match your user ($(id -u):$(id -g));
+         build output will come out owned by the wrong user. Fix .env, then re-run 'image'."
+    fi
+
+    # A full 22.2 tree plus out/ will not fit in 400 GB with much to spare.
+    local avail_gb
+    avail_gb="$(df -BG --output=avail "$SRC_DIR" 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)"
+    if [[ -n "$avail_gb" && "$avail_gb" -lt 400 ]]; then
+        warn "only ${avail_gb} GB free on the filesystem holding SRC_DIR; LineageOS asks for ~400 GB"
+    fi
+}
+
+in_container() {
+    dc exec -T lineage bash -lc "$1"
+}
+
+ensure_up() {
+    if [[ -z "$(dc ps -q lineage 2>/dev/null)" ]]; then
+        note "starting container"
+        dc up -d
+    fi
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+    image)
+        preflight
+        note "building image (this pulls ~1 GB of packages the first time)"
+        dc build "$@"
+        ;;
+    up)
+        preflight
+        dc up -d
+        note "container is up; './scripts/jetson-build shell' to get in"
+        ;;
+    down)
+        dc down
+        ;;
+    shell)
+        ensure_up
+        dc exec lineage bash -l
+        ;;
+    sync)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/sync.sh "$@"
+        ;;
+    extract)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/extract.sh "$@"
+        ;;
+    build)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/build.sh "$@"
+        ;;
+    all)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/sync.sh
+        dc exec lineage /opt/jetson-tv/extract.sh
+        dc exec lineage /opt/jetson-tv/build.sh
+        ;;
+    status)
+        printf '\n\033[1mHost disks\033[0m\n'
+        df -h "$SRC_DIR" "$CCACHE_DIR" "$DL_CACHE_DIR" 2>/dev/null || true
+        printf '\n\033[1mContainer\033[0m\n'
+        dc ps 2>/dev/null || true
+        if [[ -n "$(dc ps -q lineage 2>/dev/null)" ]]; then
+            printf '\n\033[1mTree\033[0m\n'
+            in_container 'if [ -d /srv/lineage/.repo ]; then
+                              echo "branch: $(repo info -o 2>/dev/null | awk "/Manifest branch/{print \$3}" | head -1)"
+                              echo "projects synced: $(repo list 2>/dev/null | wc -l)"
+                          else
+                              echo "no .repo yet — run: ./scripts/jetson-build sync"
+                          fi' || true
+            printf '\n\033[1mccache\033[0m\n'
+            in_container 'ccache -s | head -20' || true
+        fi
+        printf '\n'
+        ;;
+    help|--help|-h)
+        sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        die "unknown command: $cmd  (try: help)"
+        ;;
+esac

@@ -1,0 +1,48 @@
+{
+  "name": "Jetson TV — LineageOS build",
+
+  "dockerComposeFile": ["../docker-compose.yml"],
+  "service": "lineage",
+  "workspaceFolder": "/srv/lineage",
+  "remoteUser": "builder",
+
+  // Keep the compose `command` (sleep infinity) rather than letting the
+  // devcontainer override it, so `jetson-build` and VS Code can both attach
+  // to the same running container.
+  "overrideCommand": false,
+
+  // Don't tear the container down when you close the window — a build may
+  // still be running in it from the CLI.
+  "shutdownAction": "none",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-python.python",
+        "timonwong.shellcheck",
+        "redhat.vscode-xml"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+
+        // Without these VS Code will try to index a ~400 GB tree and fall over.
+        // out/ and .repo/ are the two that matter most.
+        "files.watcherExclude": {
+          "**/out/**": true,
+          "**/.repo/**": true,
+          "**/prebuilts/**": true,
+          "**/.git/**": true
+        },
+        "search.exclude": {
+          "**/out/**": true,
+          "**/.repo/**": true,
+          "**/prebuilts/**": true
+        },
+        "files.exclude": {
+          "**/.repo": true
+        }
+      }
+    }
+  }
+}
