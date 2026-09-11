@@ -100,6 +100,22 @@ VS Code tries to index 400 GB and falls over.
 
 ---
 
+## Before you buy hardware
+
+**[docs/jetson-nano-hardware-plan.md](docs/jetson-nano-hardware-plan.md)** is
+the part most likely to save you weeks. The short version:
+
+- The **only** supported wireless card is a **BCM4356** (buy a Lenovo
+  BCM94356Z, FRU `00JT478`). The Intel AC8265 that every Nano vendor sells is
+  *not* supported, and the RTL8822CE was tested and does not work.
+- Both the developer (microSD, P3448-0000) and production (16 GB eMMC,
+  P3448-0002) modules work from the same flash package.
+- Permanently out of reach, for cryptographic rather than packaging reasons:
+  HDCP, Widevine L1, Google Cast, and the certified YouTube ATV app. Plex
+  Companion, Jellyfin, Kodi UPnP/DLNA and FCast all work instead.
+- Tegra X1 has no AV1 decode. Everything else (H.264/HEVC/VP9/VP8/MPEG-2/VC-1)
+  is hardware accelerated, and Vulkan is available.
+
 ## About the blob extraction
 
 Unlike most LineageOS devices, `porg` does **not** need a running device over
