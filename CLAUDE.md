@@ -145,13 +145,38 @@ Note for future sessions: **Claude's shell does not have the docker group**
 `sg docker -c '...'`. Beware that `sg` changes the *effective* gid, which is
 why `jetson-build` reads the primary gid from passwd rather than `id -g`.
 
+- **`repo sync` done.** lineage-22.2, 1141 projects, 172 GB in
+  `/srv/build/jetson-tv/lineage`, 698 GB still free. `prebuilts/jdk` present
+  (AOSP brings its own JDK — no host JDK needed).
+
+`device/nvidia/{porg,tegra-common,t210-common}` are **not** in the tree yet, and
+that is expected: the LineageOS base manifest carries no device trees.
+`breakfast porg` runs `roomservice`, which writes
+`.repo/local_manifests/roomservice.xml` and syncs them. That happens as the
+first step of `extract`.
+
 Remaining:
 
-1. `./scripts/jetson-build sync` — first `repo sync`, several hours and a few
-   hundred GB. Not yet started.
-2. `extract` → `build`.
+1. `./scripts/jetson-build extract` — pulls the device trees via roomservice,
+   then the NVIDIA blobs into `vendor/nvidia`. **Note this runs `m otatools`,
+   which is a real compile**, so it is not a zero-CPU step.
+2. `./scripts/jetson-build build` — `mka bacon`, the long one.
 3. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
    of H.264/HEVC/VP9 samples. Hardware expected 2026-09-11.
+
+## Publishing
+
+Intended as a public repo, `calicopizzadelivery/jetson-nano-android-tv`,
+Apache-2.0. Three commits are ready locally; **no remote is configured yet** —
+Claude is blocked from creating public repos, so the `gh repo create` has to be
+run by the user. Commit authorship was rewritten to the GitHub `noreply`
+address (`300208363+calicopizzadelivery@users.noreply.github.com`) so a
+pseudonymous handle isn't publicly tied to a personal email; `filter-branch`
+backup refs were purged and history verified clean.
+
+`hardware/` is gitignored — NVIDIA design packages, and reference material for
+the separate MythTV Porg carrier-board project rather than anything this build
+needs.
 
 ## Reference
 
