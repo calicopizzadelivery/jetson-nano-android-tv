@@ -22,12 +22,20 @@ Verified on the host 2026-09-10 (first session with an actual shell).
 - **Docker was not installed** (the original note claiming it was, was wrong).
   `scripts/host-setup.sh` installs Docker CE + compose v2 from Docker's own
   apt repo.
-- Build disk: `nvme1n1p1`, 931.5 GB ext4, UUID
-  `bb1724cf-c151-4944-90c6-23b72ca9335f`, ~870 GB free. It was only being
-  auto-mounted by the desktop at `/media/flippy/<uuid>`; `host-setup.sh` gives
-  it an fstab entry at **`/srv/build`** (`nofail`), with the build dirs at
-  `/srv/build/jetson-tv/{lineage,ccache,dlcache}`.
-  Root (`nvme0n1p2`) also has 1.7 TB free if the 1 TB ever gets tight.
+- Build disk: **FAILED and physically removed on 2026-09-13.** It was
+  `nvme1n1p1`, 931.5 GB ext4, UUID `bb1724cf-c151-4944-90c6-23b72ca9335f`,
+  mounted at `/srv/build` by fstab. `/srv/build` is now an empty root-owned
+  directory on the root filesystem; the fstab line is harmless (`nofail`) but
+  stale. Everything on it was a re-downloadable cache — see Status. When a
+  replacement arrives, re-run `host-setup.sh` with the new UUID; the old
+  fstab line should be commented out first.
+  Root (`nvme0n1p2`) has 1.7 TB free and is a perfectly good interim home:
+  point the three `.env` paths somewhere under `/home/flippy` or `/srv`.
+- **Hazard while no disk is mounted:** `docker compose up` creates missing
+  bind-mount sources as root-owned empty dirs on the root filesystem.
+  `jetson-build`'s preflight refuses to start if the `.env` dirs are missing,
+  which is the right failure — don't bypass it by creating them by hand under
+  `/srv/build` unless a disk is actually mounted there.
 - Targets: Jetson Nano 4GB — a mix of **production modules** (P3448-0002,
   16 GB eMMC) and **developer modules** (P3448-0000, microSD). Both are
   supported by the same flash package. **Not yet attached to the host** as of
@@ -145,9 +153,18 @@ Note for future sessions: **Claude's shell does not have the docker group**
 `sg docker -c '...'`. Beware that `sg` changes the *effective* gid, which is
 why `jetson-build` reads the primary gid from passwd rather than `id -g`.
 
-- **`repo sync` done.** lineage-22.2, 1141 projects, 172 GB in
-  `/srv/build/jetson-tv/lineage`, 698 GB still free. `prebuilts/jdk` present
-  (AOSP brings its own JDK — no host JDK needed).
+- ~~`repo sync` done~~ — **LOST with the disk on 2026-09-13.** It had
+  completed (lineage-22.2, 1141 projects, 172 GB) and `prebuilts/jdk` was
+  present. Must be re-synced from scratch on whatever disk replaces it; it is
+  resumable and needs nothing but time and bandwidth. `ccache` and `dlcache`
+  were both still empty when the disk died (`extract` was never run, verified
+  against the session transcripts), so nothing unique went with it.
+- Also on the lost disk, belonging to the sibling bench repos:
+  `/srv/build/l4t` (NVIDIA's ~15 GB L4T BSP tree with the prepared rootfs, used
+  by `jetson-flash-node` and `qtpy-relay-controller`; rebuilt by
+  `jetson-flash-node`'s `prepare`) and
+  `/srv/build/l4t-sdimage/jetson-nano-jp461-sd-card-image.zip` (a plain NVIDIA
+  download). No surviving copies of either exist on the root disk.
 
 `device/nvidia/{porg,tegra-common,t210-common}` are **not** in the tree yet, and
 that is expected: the LineageOS base manifest carries no device trees.
