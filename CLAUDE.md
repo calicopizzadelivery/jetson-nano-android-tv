@@ -14,23 +14,31 @@ Long-term: possibly extend to Jetson Orin (AGX / NX / Nano). Deferred for now.
 
 Verified on the host 2026-09-10 (first session with an actual shell).
 
-- Host build machine: `thebe`, **Ubuntu 24.04.4 LTS (noble)**, x86_64,
-  **187 GB RAM / 112 cores**. No need to cap build parallelism — leave `JOBS`
-  blank.
+- Host build machine: `thebe`, **Ubuntu 24.04.4 LTS (noble)**, x86_64.
+  **Rebuilt 2026-09-23**: the same OS install and both NVMe drives moved from a
+  Dell Precision 7820 (112 threads / 187 GB) into an **ASUS PRIME TRX40-PRO**
+  with a **Threadripper 3970X (32c/64t)** and **94 GB** (6 of 8 DIMM slots).
+  Leave `JOBS` blank — 94 GB clears LineageOS's 64 GB floor comfortably — but
+  at ~1.5 GB per thread, if a link step ever OOMs the first thing to try is
+  `JOBS=48`.
 - **`sudo` requires a password here**, so Claude cannot run it. Anything
   needing root goes in `scripts/host-setup.sh` for the user to run.
 - **Docker was not installed** (the original note claiming it was, was wrong).
   `scripts/host-setup.sh` installs Docker CE + compose v2 from Docker's own
   apt repo.
-- Build disk: **FAILED and physically removed on 2026-09-13.** It was
-  `nvme1n1p1`, 931.5 GB ext4, UUID `bb1724cf-c151-4944-90c6-23b72ca9335f`,
-  mounted at `/srv/build` by fstab. `/srv/build` is now an empty root-owned
-  directory on the root filesystem; the fstab line is harmless (`nofail`) but
-  stale. Everything on it was a re-downloadable cache — see Status. When a
-  replacement arrives, re-run `host-setup.sh` with the new UUID; the old
-  fstab line should be commented out first.
-  Root (`nvme0n1p2`) has 1.7 TB free and is a perfectly good interim home:
-  point the three `.env` paths somewhere under `/home/flippy` or `/srv`.
+- Build disk: Samsung 980 1 TB, ext4, UUID
+  `bb1724cf-c151-4944-90c6-23b72ca9335f`, mounted at **`/srv/build`** by fstab
+  (`nofail`), build dirs at `/srv/build/jetson-tv/{lineage,ccache,dlcache}`.
+  **Its device name is not stable** — on the new board it has come up as
+  `nvme0n1` and `nvme1n1` on alternate boots; always address it by UUID.
+  Root has 1.7 TB free as fallback space.
+- **2026-09-13 scare, resolved 2026-09-23.** The disk was pulled on suspicion
+  of failure and came back in the new machine with everything intact
+  (verified: tree spot-checks clean, L4T rootfs has all 23 setuid files, SD
+  image passes `unzip -t`, `doctor` 31/31). The journal shows the NVMe never
+  logged an error; the `Buffer I/O error` lines from that evening were on
+  **`sdd`** — the USB card reader holding the Jetson's dying microSD. Check
+  *which* device an I/O error names before blaming the SSD.
 - **Hazard while no disk is mounted:** `docker compose up` creates missing
   bind-mount sources as root-owned empty dirs on the root filesystem.
   `jetson-build`'s preflight refuses to start if the `.env` dirs are missing,
@@ -153,18 +161,15 @@ Note for future sessions: **Claude's shell does not have the docker group**
 `sg docker -c '...'`. Beware that `sg` changes the *effective* gid, which is
 why `jetson-build` reads the primary gid from passwd rather than `id -g`.
 
-- ~~`repo sync` done~~ — **LOST with the disk on 2026-09-13.** It had
-  completed (lineage-22.2, 1141 projects, 172 GB) and `prebuilts/jdk` was
-  present. Must be re-synced from scratch on whatever disk replaces it; it is
-  resumable and needs nothing but time and bandwidth. `ccache` and `dlcache`
-  were both still empty when the disk died (`extract` was never run, verified
-  against the session transcripts), so nothing unique went with it.
-- Also on the lost disk, belonging to the sibling bench repos:
-  `/srv/build/l4t` (NVIDIA's ~15 GB L4T BSP tree with the prepared rootfs, used
-  by `jetson-flash-node` and `qtpy-relay-controller`; rebuilt by
-  `jetson-flash-node`'s `prepare`) and
-  `/srv/build/l4t-sdimage/jetson-nano-jp461-sd-card-image.zip` (a plain NVIDIA
-  download). No surviving copies of either exist on the root disk.
+- **`repo sync` done and intact** (re-verified 2026-09-23 after the disk
+  scare): lineage-22.2, 1141 projects, 172 GB in
+  `/srv/build/jetson-tv/lineage`, 676 GB free. `prebuilts/jdk` present (AOSP
+  brings its own JDK — no host JDK needed). `ccache` and `dlcache` are still
+  empty — `extract` has never run.
+- Also on the disk, belonging to the sibling bench repos: `/srv/build/l4t`
+  (NVIDIA L4T R32.7.6 BSP tree, 17 GB, prepared rootfs — used by
+  `jetson-flash-node` and `qtpy-relay-controller`) and
+  `/srv/build/l4t-sdimage/jetson-nano-jp461-sd-card-image.zip` (6.2 GB).
 
 `device/nvidia/{porg,tegra-common,t210-common}` are **not** in the tree yet, and
 that is expected: the LineageOS base manifest carries no device trees.
