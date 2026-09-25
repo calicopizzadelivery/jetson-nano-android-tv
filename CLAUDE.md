@@ -232,13 +232,18 @@ Remaining:
 
 ## Publishing
 
-Intended as a public repo, `calicopizzadelivery/jetson-nano-android-tv`,
-Apache-2.0. Three commits are ready locally; **no remote is configured yet** —
-Claude is blocked from creating public repos, so the `gh repo create` has to be
-run by the user. Commit authorship was rewritten to the GitHub `noreply`
-address (`300208363+calicopizzadelivery@users.noreply.github.com`) so a
-pseudonymous handle isn't publicly tied to a personal email; `filter-branch`
-backup refs were purged and history verified clean.
+**Published**: https://github.com/calicopizzadelivery/jetson-nano-android-tv
+(public, Apache-2.0). First pushed 2026-09-13; brought up to date 2026-09-24
+with the disk notes, the extract/build fixes and the first successful build.
+`origin` is the SSH remote, matching `gh`'s configured git protocol.
+
+The repo's local `user.email` is set to the GitHub `noreply` address
+(`300208363+calicopizzadelivery@users.noreply.github.com`) so a pseudonymous
+handle isn't publicly tied to a personal email. **Leave that config alone** —
+it is what keeps new commits clean, and it differs from `GIT_USER_EMAIL` in
+`.env`, which is only the in-container identity `repo` needs. Re-verified
+2026-09-24: zero occurrences of the personal address in tracked files or
+anywhere in history, and no credential-shaped strings in history either.
 
 `hardware/` is gitignored — NVIDIA design packages, and reference material for
 the separate MythTV Porg carrier-board project rather than anything this build
