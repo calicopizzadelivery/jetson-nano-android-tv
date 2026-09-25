@@ -128,9 +128,9 @@ Design decisions worth preserving:
 
 ## Unverified — confirm before relying on
 
-- Whether `p3450.sh` SKU-2 detection works in practice on a production eMMC
-  module. The XML layout exists (`flash_android_t210_emmc_p3448.xml`) and the
-  script selects it by SKU, but this hasn't been exercised.
+- ~~Whether `p3450.sh` SKU-2 detection works on a production eMMC module.~~
+  **Confirmed working 2026-09-25** on a sku 2 / fab 400 module; see the
+  flashing section above.
 - Whether BLE (not just A2DP) works on 22.2. BLE was among the issues that held
   back 19.1/20 on ARM64 Tegra. Test remote pairing early.
 
@@ -219,6 +219,51 @@ not the blueprints — which is why `extract` can bootstrap a cold tree at all.
   `vulkan.tegra.so` + `libEGL_tegra.so` + `gralloc.tegra.so` in both 32- and
   64-bit, `bcm4356a3.hcd` and the `brcmfmac4356-pcie` firmware, and 22
   `libnvmm*` media libraries.
+
+- **Flashed and booted (2026-09-25).** The build runs on real hardware:
+  LineageOS 22.2 Android TV came up on a production Jetson Nano and reached the
+  setup wizard. Target was module P3448-0002 `699-13448-0002-400 F.0`, EEPROM
+  sku 2 / fab 400, on a B01 carrier. `p3450.sh`'s SKU-2 detection — listed
+  below under "Unverified" until now — works: it read the EEPROM, chose
+  `flash_android_t210_emmc_p3448.xml` and `tegra210-p3448-0002-p3449-0000-b00`,
+  and the bootloader agreed (`BoardID = 3448, SKU = 0x2`).
+
+### Flashing porg, end to end
+
+The install is two stages: tegraflash writes the bootloader and recovery, then
+the zip is sideloaded from recovery. `APP` and `vendor` are deliberately
+flashed *empty* — the zip fills them.
+
+1. `m p3450_flash_package` → `$OUT/p3450_flash_package.txz` (22 MB).
+   **Its rules are not re-runnable.** The signing steps do
+   `mv $OUT/signed $OUT/signed_boot`, which moves *into* the destination once
+   it exists, and the packaging step ends with `cd $(dir $@); tar -cJf $@ *`,
+   which tars the archive into itself on a second run. Before re-running:
+   `rm -rf $OUT/signed*` and the stale `.txz` in the intermediates dir.
+2. Extract the txz somewhere and fix the version files. The recipe builds them
+   with `$(TOYBOX_HOST) cksum`, and AOSP's toybox has no `cksum`; the failure
+   is swallowed because it sits in a pipeline whose exit status comes from
+   `awk`. Both `emmc_bootblob_ver.txt` and `qspi_bootblob_ver.txt` are flashed
+   into the VER/VER_b partitions, so append the missing line by hand:
+   `read -r crc bytes _ < <(cksum "$f"); printf 'BYTES:%s CRC32:%s\n' "$bytes" "$crc" >> "$f"`
+3. `jetson-flash-node`'s `recovery` verb to get the module into RCM (0955:7f21),
+   then run `./flash.sh` from the extracted package as **root with USB
+   passthrough** — `helpers.sh` exits unless `EUID` is 0 and needs `xxd` and
+   `fdtput`. The flash-node image has all three.
+4. Boot to recovery, then **format cache and data before sideloading**. CAC is
+   flashed with no filesystem, so recovery cannot stage an install and
+   `adb sideload` ends instantly with `Total xfer: 0.00x` and
+   `Can't mount /cache/recovery/last_install`. Factory reset → Format cache
+   partition, then Format data.
+5. Apply update → Apply from ADB, then `adb sideload <the zip>`. Sideload mode
+   needs no adb authorisation, which matters because the device shows up as
+   `unauthorized` otherwise and there is no way to accept the prompt headlessly.
+
+Driving that menu headlessly needs both bench tools: the FRDM-K64F injects
+arrow keys and Enter over USB, and the MS2109 shows the result — but only if
+one capture stream is held open across the whole sequence. See the HPD note in
+`jetson-flash-node/tools/hdmi.py`; it is the single most misleading failure
+mode on this bench.
 
 Remaining:
 
