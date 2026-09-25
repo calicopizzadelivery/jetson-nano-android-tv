@@ -35,7 +35,7 @@ RUN apt-get update \
       adb fastboot android-sdk-libsparse-utils \
       brotli bsdextrautils ca-certificates cpio file jq less nano \
       openssh-client p7zip-full procps python3 python3-pip python3-venv \
-      python-is-python3 sudo tzdata unzip wget xz-utils \
+      python-is-python3 sudo tzdata unzip wget xz-utils zstd \
  && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------

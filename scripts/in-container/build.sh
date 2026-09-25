@@ -10,6 +10,25 @@ DEVICE="${LINEAGE_DEVICE:-porg}"
 cd "$SRC"
 [[ -d .repo ]] || { echo "no source tree yet — run 'jetson-build sync' first" >&2; exit 1; }
 
+# Soong cannot analyse this tree until the blobs have been extracted. The
+# generated vendor/nvidia/common/exclude-bp.mk is what puts
+#   -vendor/nvidia/common -device/nvidia/tegra-common/vendor
+# at the front of PRODUCT_SOURCE_ROOT_DIRS, pruning every vendor branch from
+# the blueprint scan and re-including only the rel-shield-r/* ones this device
+# needs. Without it Soong parses r35 and r36 as well, and since those two carry
+# byte-identical l4t/ and nvpmodel/ blueprints it dies on a dozen duplicate
+# module names. Fail with the real cause rather than that.
+[[ -f vendor/nvidia/common/exclude-bp.mk ]] || {
+    echo "vendor/nvidia is not populated — run 'jetson-build extract' first" >&2
+    exit 1
+}
+
+# AOSP's envsetup.sh is not nounset-safe: _gettop_once tests "$TOP" before
+# anything assigns it, so `set -u` aborts the source at build/envsetup.sh:21.
+# The build functions it defines (breakfast, m, mka) have the same habit, so
+# nounset stays off for the rest of the script. -e and pipefail remain on.
+set +u
+
 # shellcheck disable=SC1091
 source build/envsetup.sh
 

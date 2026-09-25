@@ -17,10 +17,11 @@ Verified on the host 2026-09-10 (first session with an actual shell).
 - Host build machine: `thebe`, **Ubuntu 24.04.4 LTS (noble)**, x86_64.
   **Rebuilt 2026-09-23**: the same OS install and both NVMe drives moved from a
   Dell Precision 7820 (112 threads / 187 GB) into an **ASUS PRIME TRX40-PRO**
-  with a **Threadripper 3970X (32c/64t)** and **94 GB** (6 of 8 DIMM slots).
-  Leave `JOBS` blank — 94 GB clears LineageOS's 64 GB floor comfortably — but
-  at ~1.5 GB per thread, if a link step ever OOMs the first thing to try is
-  `JOBS=48`.
+  with a **Threadripper 3970X (32c/64t)** and **125 GB** (all 8 DIMM slots —
+  the memory was filled out after the 2026-09-23 note said 94 GB / 6 slots).
+  Leave `JOBS` blank — 125 GB clears LineageOS's 64 GB floor comfortably, and
+  at ~1.5 GB per thread 64 threads wants ~96 GB, which fits. If a link step
+  ever OOMs anyway, the first thing to try is `JOBS=48`.
 - **`sudo` requires a password here**, so Claude cannot run it. Anything
   needing root goes in `scripts/host-setup.sh` for the user to run.
 - **Docker was not installed** (the original note claiming it was, was wrong).
@@ -156,10 +157,11 @@ Done (2026-09-10):
   2.65, git 2.34.1, Python 3.10.12.
 - Git repo initialised, `.env` gitignored.
 
-Note for future sessions: **Claude's shell does not have the docker group**
-(the session predates the `usermod`). Prefix docker commands with
-`sg docker -c '...'`. Beware that `sg` changes the *effective* gid, which is
-why `jetson-build` reads the primary gid from passwd rather than `id -g`.
+Note for future sessions: Claude's shell **does** have the docker group as of
+2026-09-24 — the `sg docker -c '...'` workaround the earlier sessions needed is
+no longer required. Keep in mind that `sg` changes the *effective* gid, which is
+why `jetson-build` reads the primary gid from passwd rather than `id -g`; that
+logic is still correct and should stay.
 
 - **`repo sync` done and intact** (re-verified 2026-09-23 after the disk
   scare): lineage-22.2, 1141 projects, 172 GB in
@@ -177,14 +179,46 @@ that is expected: the LineageOS base manifest carries no device trees.
 `.repo/local_manifests/roomservice.xml` and syncs them. That happens as the
 first step of `extract`.
 
+- **`extract` done (2026-09-24)**, the first time it had ever been run.
+  roomservice synced 23 NVIDIA projects, and all eleven blob sources came down
+  and unpacked into `vendor/nvidia` (484 MB): NVIDIA's licensed T210 TLK
+  binaries (rel-24 and rel-30), four SHIELD OTAs (`foster_e`, `darcy`,
+  `mdarcy`, `sif_32b`), and the L4T tarballs for r32.7.6 / r32.6.1 / R35.6.2 /
+  R36.4.4. No device over adb, exactly as the research said. A full Soong
+  analysis (`m nothing`) then passed in 3m32s.
+
+**Nothing may invoke Soong before `extract` has run.** This is the single most
+important ordering constraint in the tree, and it is not obvious:
+
+- Every `prebuilt_*` module under `device/nvidia/tegra-common/vendor` depends
+  on a generated `<file>_{32,64}-defaults` module, and `extract_utils.sh`
+  (~line 473) only writes those into `vendor/nvidia` during extraction.
+- Extraction also generates `vendor/nvidia/common/exclude-bp.mk`, which puts
+  `-vendor/nvidia/common -device/nvidia/tegra-common/vendor` at the front of
+  `PRODUCT_SOURCE_ROOT_DIRS`. Those `-` entries prune the whole vendor tree
+  from the blueprint scan, after which only the `rel-shield-r/*` directories
+  this device needs are re-included.
+- Without that pruning Soong parses `vendor/r35` and `vendor/r36` too. Since
+  upstream 0f16ddf "vendor: Convert to blueprint" (2025-06-17) those two carry
+  byte-identical `l4t/` and `nvpmodel/` blueprints, and because
+  `tegra-common/vendor/Android.bp` declares one `soong_namespace` over every
+  branch below it, twelve module names collide and Soong will not bootstrap.
+  It looks like an upstream bug and is really just "you have not extracted
+  yet". `build.sh` now checks for `exclude-bp.mk` and says so directly.
+
+`breakfast` is safe before extraction — it only evaluates the product config,
+not the blueprints — which is why `extract` can bootstrap a cold tree at all.
+
 Remaining:
 
-1. `./scripts/jetson-build extract` — pulls the device trees via roomservice,
-   then the NVIDIA blobs into `vendor/nvidia`. **Note this runs `m otatools`,
-   which is a real compile**, so it is not a zero-CPU step.
-2. `./scripts/jetson-build build` — `mka bacon`, the long one.
-3. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
-   of H.264/HEVC/VP9 samples. Hardware expected 2026-09-11.
+1. `./scripts/jetson-build build` — `mka bacon`, the long one.
+2. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
+   of H.264/HEVC/VP9 samples.
+3. `/dlcache` is **still empty** — this first extract downloaded straight to
+   the container's `/tmp`. `-c/--cache-dir` means "extract from an
+   already-primed cache" and aborts on an empty one; `-p/--prime-cache` is
+   what fills it. `extract.sh` now primes before extracting, but priming costs
+   the ~20 GB download again, so it will only happen on the next `extract`.
 
 ## Publishing
 
