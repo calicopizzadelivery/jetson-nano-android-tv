@@ -209,12 +209,22 @@ important ordering constraint in the tree, and it is not obvious:
 `breakfast` is safe before extraction — it only evaluates the product config,
 not the blueprints — which is why `extract` can bootstrap a cold tree at all.
 
+- **`build` done (2026-09-24)** — `mka bacon`, 180108/180108 targets, no
+  failures, **57m59s** on the 3970X with a cold ccache (5.8% hit rate, 2 GB
+  written; a rebuild should be far quicker). Artifacts in
+  `/srv/build/jetson-tv/lineage/out/target/product/porg`:
+  `lineage-22.2-20260925-UNOFFICIAL-porg.zip` (771 MB, signed with the AOSP
+  `testkey`, `unzip -t` clean), `recovery.img` (20 MB), `boot.img` (14 MB).
+  Spot-checked in the vendor image and all present as the research predicted:
+  `vulkan.tegra.so` + `libEGL_tegra.so` + `gralloc.tegra.so` in both 32- and
+  64-bit, `bcm4356a3.hcd` and the `brcmfmac4356-pcie` firmware, and 22
+  `libnvmm*` media libraries.
+
 Remaining:
 
-1. `./scripts/jetson-build build` — `mka bacon`, the long one.
-2. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
+1. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
    of H.264/HEVC/VP9 samples.
-3. `/dlcache` is **still empty** — this first extract downloaded straight to
+2. `/dlcache` is **still empty** — this first extract downloaded straight to
    the container's `/tmp`. `-c/--cache-dir` means "extract from an
    already-primed cache" and aborts on an empty one; `-p/--prime-cache` is
    what fills it. `extract.sh` now primes before extracting, but priming costs
