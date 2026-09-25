@@ -265,10 +265,77 @@ one capture stream is held open across the whole sequence. See the HPD note in
 `jetson-flash-node/tools/hdmi.py`; it is the single most misleading failure
 mode on this bench.
 
+### On-device findings (2026-09-25)
+
+**There is a root-capable shell on the serial console.** This is a userdebug
+build, so `/dev/ttyUSB0` gives a `console:/ $` prompt as uid 2000 with no
+login. It is the way in when adb is not yet available, and it is what got the
+device past first boot.
+
+**The setup wizard cannot be completed on this bench.** Its "Searching for
+accessories" step waits for a BLE remote and ignores every key, so with no
+radio fitted it never advances — the HID injector is irrelevant there, and
+Android does see it (`dumpsys input` lists the injector as a full keyboard).
+Bypass it from the serial console:
+
+    settings put global device_provisioned 1
+    settings put secure user_setup_complete 1
+    settings put global adb_enabled 1
+    pm disable-user --user 0 org.lineageos.setupwizard
+
+adb notes: keep one long-lived adb container, because a fresh one generates a
+new RSA key each run and re-prompts (keys now persist in
+`/srv/build/jetson-tv/adbkeys`). If adb wedges while the gadget is present,
+`settings put global adb_enabled 0` then `1` re-enumerates it.
+
+**Hardware codecs work and are preferred.** Every clip selected an
+`OMX.Nvidia.*` component, never a `c2.android.*` software fallback:
+
+| path | component | result |
+| --- | --- | --- |
+| H.264 encode | `OMX.Nvidia.h264.encoder` | 1280x720 @ 20 Mbps via `screenrecord` |
+| H.264 decode | `OMX.Nvidia.h264.decode` | ok |
+| HEVC decode | `OMX.Nvidia.h265.decode` | 1920x1080, via a MediaProvider thumbnail |
+| VP8 decode | `OMX.Nvidia.vp8.decode` | 1920x1080 at 116.7 fps |
+| VP9 decode | `OMX.Nvidia.vp9.decode` | instantiates, then `ERROR(0x80001020)`, 0 frames |
+| MPEG-2 decode | `OMX.Nvidia.mpeg2v.decode` | same |
+| AV1 | — | absent, as expected on T210 |
+
+VP9 and MPEG-2 are **unproven, not failed**: `decodetest` decodes to
+ByteBuffers with no output Surface, and those two components appear to require
+one. HEVC at 1080p works through the normal Surface-backed path. Adding
+Surface output to `decodetest` would settle it.
+
+### Two defects fixed in scripts/in-container/tree-local-changes.sh
+
+**BLE was disabled in the kernel.** `net/bluetooth/Kconfig` has
+`config BT_LE ... default y`, but every tegra defconfig shipped
+`# CONFIG_BT_LE is not set`, so the kernel had no BLE at all. That would break
+remote pairing on any radio, and is a plausible root cause for the
+long-standing "BLE doesn't work on ARM64 Tegra" reports.
+
+**`wifi_loader.sh` could not load any wifi module.** Two separate defects in
+`device/nvidia/tegra-common/initfiles/wifi_loader.sh`: it insmods from
+`/system/lib/modules`, which does not exist on this build (modules install to
+`/vendor/lib/modules`), and `perform_enumeration()` only scans for Broadcom
+vendor ids, so a Realtek card is never matched. The tree *does* build and ship
+a working `rtl8822ce.ko` from `kernel/nvidia/nvidia`, which sits unloaded —
+almost certainly why "RTL8822CE tested, does not work" is in this file's
+history. Now fixed, with detection for Realtek PCIe (`0x10ec`) and an insmod
+branch for `10ec:c822`.
+
+Neither can be *proven* until a radio is fitted. **RTL8822CE is the card to
+buy** for quantity: the driver is already in-tree, the cards are ~$8-12 and
+ubiquitous, and it is M.2 2230 Key E. BCM4356 remains the only chip with wifi
+firmware in the image (`brcmfmac4356-pcie.bin`), but eBay has ~3 listings.
+
 Remaining:
 
-1. Verify on-device: BLE remote pairing, HDMI audio passthrough, hardware decode
-   of H.264/HEVC/VP9 samples.
+1. Verify on-device once a radio is fitted: BLE remote pairing and wifi.
+2. HDMI audio passthrough — the MS2109 presents an ALSA *capture* device
+   (`card 2: MS2109`, S16_LE 48 kHz stereo), so `arecord -D hw:MS2109,0` is a
+   real test. It only receives 2-channel LPCM, so it cannot validate
+   multichannel or Dolby/DTS bitstream passthrough.
 2. `/dlcache` is **still empty** — this first extract downloaded straight to
    the container's `/tmp`. `-c/--cache-dir` means "extract from an
    already-primed cache" and aborts on an empty one; `-p/--prime-cache` is

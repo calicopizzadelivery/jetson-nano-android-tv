@@ -23,6 +23,9 @@ cd "$SRC"
     exit 1
 }
 
+echo "==> applying local tree changes"
+SRC="$SRC" bash /opt/jetson-tv/tree-local-changes.sh
+
 # AOSP's envsetup.sh is not nounset-safe: _gettop_once tests "$TOP" before
 # anything assigns it, so `set -u` aborts the source at build/envsetup.sh:21.
 # The build functions it defines (breakfast, m, mka) have the same habit, so
@@ -36,6 +39,24 @@ source build/envsetup.sh
 # release-config segment in Android 15 (lineage_porg-bp1a-userdebug), and
 # breakfast works that out for us across branches.
 breakfast "$DEVICE"
+
+# Clear the build outputs whose rules cannot be re-run. Two of them in the
+# porg flash-package path assume a clean tree and fail on the second build:
+#
+#   mv $OUT/signed $OUT/signed_boot          -> "Directory not empty" once
+#                                               signed_boot already exists
+#   cd <dir>; tar -cJf p3450_flash_package.txz *
+#                                            -> "file is the archive; not
+#                                               dumped", because the glob picks
+#                                               up the archive it is writing
+#
+# Both outputs are regenerated from scratch in well under a minute, so
+# removing them is cheaper than the failed build they otherwise cause.
+if [[ -n "${OUT:-}" && -d "${OUT}" ]]; then
+    rm -rf "${OUT}"/signed "${OUT}"/signed_* 2>/dev/null || true
+    rm -f  "${OUT}"/obj/ETC/p3450_flash_package_intermediates/p3450_flash_package.txz 2>/dev/null || true
+    echo "==> cleared non-rerunnable flash-package outputs"
+fi
 
 start=$(date +%s)
 if [[ -n "${JOBS:-}" ]]; then

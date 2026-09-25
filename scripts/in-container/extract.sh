@@ -33,6 +33,9 @@ if ! breakfast "$DEVICE"; then
     echo "    first breakfast failed as expected; continuing to blob extraction"
 fi
 
+echo "==> applying local tree changes"
+SRC="$SRC" bash /opt/jetson-tv/tree-local-changes.sh
+
 # There is deliberately no `m otatools` here. An earlier revision of this
 # script ran it before extraction, assuming Tegra needed it. It cannot work:
 # every prebuilt_* module under device/nvidia/tegra-common/vendor depends on a
