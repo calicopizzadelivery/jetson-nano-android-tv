@@ -33,3 +33,23 @@ appeared to do nothing on that screen. That was a red herring:
 the `onBackPressed` extra that `BluetoothSetupActivity` re-launches on. The
 patch stands on its own as a visible affordance, but it is not a fix for a
 confirmed hang, and the commit message does not claim to be.
+
+## Catapult/0001 — open the panel from a remote or keyboard button
+
+The system options panel is currently reachable only by focusing the
+notification indicator and selecting it: several d-pad presses away, and
+undiscoverable.
+
+Handles `KEYCODE_SETTINGS` (remotes with a settings button) and `KEYCODE_MENU`
+(the application key on a USB or Bluetooth keyboard) in `MainActivity`, and
+adds a shortcut row to the panel so it can be turned off. The toggle removes
+the shortcut, not the panel — the notification indicator still works, so it
+cannot strand a user who just disabled their only way in. Defaults to on.
+
+**Status**: compiles (`m Catapult`, 49s). Not yet run.
+
+Note for bench testing: our FRDM-K64F injector is a boot-protocol keyboard
+(usage page 0x07 only) and its table has no Application key, so it cannot send
+`KEYCODE_MENU` as shipped. HID usage 0x65 (Keyboard Application) maps to it —
+adding that one entry to the firmware's key table is enough to drive this from
+the bench.

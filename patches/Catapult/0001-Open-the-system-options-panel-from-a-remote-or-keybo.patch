@@ -1,0 +1,196 @@
+From 61162356a67b6a0b45d95562dd5ae9000c5346b2 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:22:38 -0500
+Subject: [PATCH] Open the system options panel from a remote or keyboard
+ button
+
+The panel is currently reachable only by moving focus to the notification
+indicator and selecting it. On a TV that is several d-pad presses from
+wherever the user happens to be, and it is undiscoverable: nothing suggests
+the indicator is a button.
+
+Handle KEYCODE_SETTINGS and KEYCODE_MENU in the launcher and open the panel.
+KEYCODE_SETTINGS covers remotes with a dedicated settings button;
+KEYCODE_MENU covers the application key on a USB or Bluetooth keyboard, which
+is what a keyboard-driven setup has available.
+
+Add a shortcut row to the panel itself so the behaviour can be turned off,
+stored in the launcher's existing default SharedPreferences alongside the
+other launcher state. Turning it off removes the shortcut, not the panel: the
+notification indicator still opens it, so the toggle cannot strand a user who
+has just disabled the only way back in.
+
+Defaults to on.
+
+Change-Id: I4e05ae133b04f22f995c5aef6ea5000921b77561
+---
+ .../org/lineageos/tv/launcher/MainActivity.kt | 19 ++++++++++++++++
+ .../tv/launcher/SystemOptionsActivity.kt      | 22 +++++++++++++++++++
+ .../tv/launcher/ext/SharedPreferences.kt      | 14 ++++++++++++
+ .../res/layout/activity_system_options.xml    |  9 ++++++++
+ app/src/main/res/values/strings.xml           |  1 +
+ 5 files changed, 65 insertions(+)
+
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/MainActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/MainActivity.kt
+index 65b2fd4..512d324 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/MainActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/MainActivity.kt
+@@ -12,6 +12,7 @@ import android.os.Bundle
+ import android.transition.Slide
+ import android.transition.TransitionManager
+ import android.view.Gravity
++import android.view.KeyEvent
+ import android.view.View
+ import android.widget.ImageButton
+ import android.widget.ImageView
+@@ -37,6 +38,7 @@ import org.lineageos.tv.launcher.adapter.FavoritesAdapter
+ import org.lineageos.tv.launcher.adapter.MainVerticalAdapter
+ import org.lineageos.tv.launcher.adapter.PreviewProgramsAdapter
+ import org.lineageos.tv.launcher.adapter.WatchNextAdapter
++import org.lineageos.tv.launcher.ext.panelShortcutEnabled
+ import org.lineageos.tv.launcher.ext.favoriteApps
+ import org.lineageos.tv.launcher.ext.homeRoleRequestDialogDismissed
+ import org.lineageos.tv.launcher.ext.roleCanBeRequested
+@@ -215,6 +217,23 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
+         }
+     }
+ 
++    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
++        // A dedicated remote button, or the keyboard's application key, opens
++        // the system options panel. The panel stays reachable from the
++        // notification indicator when the shortcut is turned off.
++        if (sharedPreferences.panelShortcutEnabled) {
++            when (keyCode) {
++                KeyEvent.KEYCODE_SETTINGS,
++                KeyEvent.KEYCODE_MENU -> {
++                    startActivity(Intent(this, SystemOptionsActivity::class.java))
++                    return true
++                }
++            }
++        }
++
++        return super.onKeyDown(keyCode, event)
++    }
++
+     override fun onStart() {
+         super.onStart()
+         if (NotificationUtils.notificationPermissionGranted(this)) {
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+index 6e3b57c..df60c11 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+@@ -37,7 +37,9 @@ import androidx.lifecycle.lifecycleScope
+ import androidx.lifecycle.repeatOnLifecycle
+ import com.google.android.material.button.MaterialButton
+ import kotlinx.coroutines.launch
++import androidx.preference.PreferenceManager
+ import org.lineageos.tv.launcher.ext.NetworkState
++import org.lineageos.tv.launcher.ext.panelShortcutEnabled
+ import org.lineageos.tv.launcher.ext.networkCallbackFlow
+ import org.lineageos.tv.launcher.notification.NotificationAdapter
+ import org.lineageos.tv.launcher.notification.NotificationUtils
+@@ -61,6 +63,7 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     private val noNotificationAccessLinearLayout by lazy { findViewById<LinearLayout>(R.id.noNotificationAccessLinearLayout)!! }
+     private val noNotificationsTextView by lazy { findViewById<TextView>(R.id.noNotificationsTextView)!! }
+     private val notificationsVerticalGridView by lazy { findViewById<VerticalGridView>(R.id.notificationsVerticalGridView)!! }
++    private val panelShortcutTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.panelShortcutTwoLineButton)!! }
+     private val powerMaterialButton by lazy { findViewById<MaterialButton>(R.id.powerMaterialButton)!! }
+     private val settingsButton by lazy { findViewById<MaterialButton>(R.id.settingsMaterialButton)!! }
+     private val sleepMaterialButton by lazy { findViewById<MaterialButton>(R.id.sleepMaterialButton)!! }
+@@ -69,6 +72,8 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+ 
+     private val connectivityManager by lazy { getSystemService(ConnectivityManager::class.java)!! }
+ 
++    private val sharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this)!! }
++
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
+ 
+@@ -94,6 +99,7 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         // Wifi & Bluetooth
+         setNetworkButton()
+         setBluetoothButton()
++        setPanelShortcutButton()
+ 
+         settingsButton.setOnClickListener {
+             startActivity(SETTINGS)
+@@ -268,6 +274,22 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         networkTwoLineButton.setSpan(networkSpan)
+     }
+ 
++    private fun setPanelShortcutButton() {
++        val enabled = sharedPreferences.panelShortcutEnabled
++        val statusSpan = SpannableString(
++            resources.getString(
++                R.string.panel_shortcut_status,
++                resources.getString(if (enabled) R.string.enabled else R.string.disabled)
++            )
++        )
++        panelShortcutTwoLineButton.setSpan(statusSpan)
++
++        panelShortcutTwoLineButton.setOnClickListener {
++            sharedPreferences.panelShortcutEnabled = !sharedPreferences.panelShortcutEnabled
++            setPanelShortcutButton()
++        }
++    }
++
+     private fun setBluetoothButton() {
+         var btString = resources.getString(R.string.disabled)
+         val bluetoothAdapter = getSystemService(BluetoothManager::class.java)?.adapter
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/ext/SharedPreferences.kt b/app/src/main/java/org/lineageos/tv/launcher/ext/SharedPreferences.kt
+index 4058596..733b26e 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/ext/SharedPreferences.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/ext/SharedPreferences.kt
+@@ -77,3 +77,17 @@ var SharedPreferences.homeRoleRequestDialogDismissed: Boolean
+     set(value) = edit {
+         putBoolean(HOME_ROLE_REQUEST_DIALOG_DISMISSED, value)
+     }
++
++const val PANEL_SHORTCUT_ENABLED_KEY = "panel_shortcut_enabled"
++
++/**
++ * Whether a remote or keyboard button opens the system options panel.
++ *
++ * The panel is always reachable from the notification indicator, so turning
++ * this off removes the shortcut rather than the panel itself.
++ */
++var SharedPreferences.panelShortcutEnabled: Boolean
++    get() = getBoolean(PANEL_SHORTCUT_ENABLED_KEY, true)
++    set(value) = edit {
++        putBoolean(PANEL_SHORTCUT_ENABLED_KEY, value)
++    }
+diff --git a/app/src/main/res/layout/activity_system_options.xml b/app/src/main/res/layout/activity_system_options.xml
+index 4e543c4..03cb3dc 100644
+--- a/app/src/main/res/layout/activity_system_options.xml
++++ b/app/src/main/res/layout/activity_system_options.xml
+@@ -114,6 +114,15 @@
+ 
+             </LinearLayout>
+ 
++            <org.lineageos.tv.launcher.view.TwoLineButton
++                android:id="@+id/panelShortcutTwoLineButton"
++                style="@style/TwoLineSystemOptionsButtonStyle"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="6dp"
++                android:text="@string/panel_shortcut_status"
++                app:icon="@drawable/ic_keyboard" />
++
+         </LinearLayout>
+ 
+         <androidx.constraintlayout.widget.ConstraintLayout
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index e6103e9..cd5d0bb 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -28,6 +28,7 @@
+     <string name="network_status">Network\n%1$s</string>
+     <string name="bluetooth_status">Accessories\n%1$s</string>
+     <string name="not_connected">Not connected</string>
++    <string name="panel_shortcut_status">Panel shortcut\n%1$s</string>
+     <string name="enabled">Enabled</string>
+     <string name="disabled">Disabled</string>
+ 
+-- 
+2.43.0
+
