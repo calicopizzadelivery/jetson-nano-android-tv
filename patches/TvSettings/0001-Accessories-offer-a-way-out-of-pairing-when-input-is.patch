@@ -1,0 +1,154 @@
+From feb13ffcb96f4d3f75deb6fd67e3a4ed9ec09852 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:14:40 -0500
+Subject: [PATCH] Accessories: offer a way out of pairing when input is already
+ attached
+
+The accessory pairing screen exists so that a user with no input device at
+all can pair a remote during setup. It offers no way to leave, which is
+correct in that situation but wrong whenever something is already attached:
+on a board with no Bluetooth radio fitted the scan can never succeed, and the
+step becomes a dead end reachable only by pulling power.
+
+Append a "Skip" row below the discovered devices when a non-virtual keyboard,
+d-pad or gamepad is present, and finish with RESULT_OK when it is chosen so
+the caller advances rather than treating it as a failure. Virtual devices are
+ignored, since the framework always exposes a virtual keyboard and counting
+it would make the check always true.
+
+The row only appears when the user demonstrably has something to select it
+with, so the no-input case is unchanged.
+
+Change-Id: Ie740c8dd8b33262483b63c97c94a91a66be97643
+---
+ Settings/res/values/strings.xml               |  5 +++
+ .../settings/accessories/AccessoryUtils.java  | 36 +++++++++++++++++++
+ .../accessories/AddAccessoryActivity.java     |  8 +++++
+ .../AddAccessoryPreferenceFragment.java       | 15 ++++++++
+ 4 files changed, 64 insertions(+)
+
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index f1579fc4c..06e3c6324 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -669,6 +669,11 @@
+     <!-- Device Paring Status: Error. [CHAR LIMIT=50] -->
+     <string name="accessory_state_error">Couldn\'t pair</string>
+     <!-- Device Paring Status: Canceled. [CHAR LIMIT=50] -->
++    <!-- Title of the row that leaves the accessory pairing step when the user
++         already has a keyboard, d-pad or gamepad attached [CHAR LIMIT=40] -->
++    <string name="accessory_skip_pairing">Skip</string>
++    <!-- Summary of the skip row [CHAR LIMIT=NONE] -->
++    <string name="accessory_skip_pairing_summary">Continue without pairing an accessory</string>
+     <string name="accessory_state_canceled">Canceled</string>
+     <!-- Device Paring Status: Pairing Complete. [CHAR LIMIT=50] -->
+     <string name="accessory_state_paired">Paired</string>
+diff --git a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+index 4f57811f7..a0331ab82 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
++++ b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+@@ -21,6 +21,7 @@ import android.bluetooth.BluetoothClass;
+ import android.bluetooth.BluetoothDevice;
+ import android.bluetooth.BluetoothProfile;
+ import android.content.Context;
++import android.view.InputDevice;
+ import android.text.Html;
+ import android.util.Log;
+ 
+@@ -99,6 +100,41 @@ final class AccessoryUtils {
+         return device.getAlias();
+     }
+ 
++    /**
++     * Whether the device already has a usable physical input device attached —
++     * a USB/BT keyboard, a d-pad or a gamepad.
++     *
++     * The accessory pairing screen is shown during setup so that a user with no
++     * input at all can pair a remote. When something is already attached the
++     * user can navigate, and should be offered a way past the step instead of
++     * waiting on a scan that may never find anything (for example on a board
++     * with no Bluetooth radio fitted).
++     *
++     * Virtual devices are ignored: the framework always exposes a virtual
++     * keyboard, so counting it would make this always true.
++     */
++    public static boolean hasPhysicalInputDevice() {
++        for (int id : InputDevice.getDeviceIds()) {
++            final InputDevice device = InputDevice.getDevice(id);
++            if (device == null || device.isVirtual()) {
++                continue;
++            }
++            final int sources = device.getSources();
++            final boolean isDpad =
++                    (sources & InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD;
++            final boolean isGamepad =
++                    (sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
++            final boolean isAlphabeticKeyboard =
++                    (sources & InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
++                            && device.getKeyboardType()
++                                    == InputDevice.KEYBOARD_TYPE_ALPHABETIC;
++            if (isDpad || isGamepad || isAlphabeticKeyboard) {
++                return true;
++            }
++        }
++        return false;
++    }
++
+     public static boolean isBluetoothEnabled() {
+         return getDefaultBluetoothAdapter() != null && getDefaultBluetoothAdapter().isEnabled();
+     }
+diff --git a/Settings/src/com/android/tv/settings/accessories/AddAccessoryActivity.java b/Settings/src/com/android/tv/settings/accessories/AddAccessoryActivity.java
+index 2de357b4a..d061f15ab 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AddAccessoryActivity.java
++++ b/Settings/src/com/android/tv/settings/accessories/AddAccessoryActivity.java
+@@ -346,6 +346,14 @@ public class AddAccessoryActivity extends FragmentActivity
+ 
+     public void onActionClicked(String address) {
+         cancelPairingCountdown();
++        if (AddAccessoryPreferenceFragment.KEY_SKIP.equals(address)) {
++            // Not a device address: the user chose to leave the step. Finish
++            // normally so the caller advances rather than treating this as a
++            // failure.
++            setResult(RESULT_OK);
++            finish();
++            return;
++        }
+         if (!mDone) {
+             btDeviceClicked(address);
+         }
+diff --git a/Settings/src/com/android/tv/settings/accessories/AddAccessoryPreferenceFragment.java b/Settings/src/com/android/tv/settings/accessories/AddAccessoryPreferenceFragment.java
+index 31852b4a5..a31f01398 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AddAccessoryPreferenceFragment.java
++++ b/Settings/src/com/android/tv/settings/accessories/AddAccessoryPreferenceFragment.java
+@@ -50,6 +50,9 @@ public class AddAccessoryPreferenceFragment extends BaseLeanbackPreferenceFragme
+     private final SparseArray<Drawable.ConstantState> mDrawablesConstantState = new SparseArray<>();
+     private final Lifecycle mLifecycle = new Lifecycle(this);
+ 
++    /** Key of the synthetic "skip" row appended below the discovered devices. */
++    public static final String KEY_SKIP = "skip_pairing";
++
+     public AddAccessoryPreferenceFragment() {
+         super();
+     }
+@@ -94,6 +97,18 @@ public class AddAccessoryPreferenceFragment extends BaseLeanbackPreferenceFragme
+             preference.setTitle(bt.getName());
+             screen.addPreference(preference);
+         }
++
++        // Offer a way out when the user already has something to navigate with.
++        // Without this the screen can only be left by pairing something, which
++        // is impossible on hardware with no Bluetooth radio.
++        if (AccessoryUtils.hasPhysicalInputDevice()) {
++            final Preference skip = new Preference(themedContext);
++            skip.setKey(KEY_SKIP);
++            skip.setTitle(R.string.accessory_skip_pairing);
++            skip.setSummary(R.string.accessory_skip_pairing_summary);
++            screen.addPreference(skip);
++        }
++
+         setPreferenceScreen(screen);
+     }
+ 
+-- 
+2.43.0
+
