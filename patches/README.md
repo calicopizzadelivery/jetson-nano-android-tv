@@ -12,27 +12,51 @@ should stop being ours as soon as they land upstream.
     cd /srv/build/jetson-tv/lineage/packages/apps/TvSettings
     git am /path/to/patches/TvSettings/0001-*.patch
 
-## TvSettings/0001 — skip accessory pairing when input is attached
+## TvSettings/0001 — say that Back skips accessory pairing
 
-The setup wizard's accessory pairing step exists so a user with no input device
-can pair a remote. It offers no way to leave. On hardware with no Bluetooth
-radio fitted the scan can never succeed, so the step is a dead end.
+The pairing step is shown during setup so a user with no input device can pair
+a remote, and it scans until something is found. **Back does leave it** — the
+activity finishes and the caller advances — but nothing says so, and on
+hardware with no Bluetooth radio the scan never succeeds, so it reads as a
+dead end.
 
-Adds a "Skip" row when a non-virtual keyboard, d-pad or gamepad is present, and
-finishes with `RESULT_OK` so the caller advances.
+When a non-virtual keyboard, d-pad or gamepad is attached, the summary gains
+"Press Back to skip this step." With no input attached the wording is
+unchanged.
 
-**Status**: compiles (`m TvSettings`, 1m44s). Not yet run. Validate on
-`lineage_sdk_tv_x86_64` before submitting — see "Emulator" in CLAUDE.md.
+**Status**: verified running on `lineage_sdk_tv_x86_64`. The emulator
+enumerates `id -1 "Virtual"` (skipped) and `id 0 "qwerty2"` (sources 0x301,
+keyboard type 2); the hint renders, and `input keyevent 4` leaves the screen.
 
-**Note on the original diagnosis.** This was first investigated because Escape
-appeared to do nothing on that screen. That was a red herring:
-`PhoneWindowManager` consumes `KEYCODE_ESCAPE` with no modifiers
-(`closeSystemDialogs()`, returns true) so it never reaches the activity, and
-`Generic.kl` maps Escape to `KEYCODE_ESCAPE` while `KEYCODE_BACK` is keycode
-158. A real BACK may well already leave the screen — nothing in TvSettings sets
-the `onBackPressed` extra that `BluetoothSetupActivity` re-launches on. The
-patch stands on its own as a visible affordance, but it is not a fix for a
-confirmed hang, and the commit message does not claim to be.
+**This replaces an earlier, wrong version of this patch.** The first attempt
+added a "Skip" row to `AddAccessoryPreferenceFragment` on the theory that the
+screen was captive. Two things were wrong with that:
+
+- The screen is not captive. Escape appeared to do nothing because
+  `PhoneWindowManager` consumes `KEYCODE_ESCAPE` with no modifiers
+  (`closeSystemDialogs()`, returns true) and `Generic.kl` maps Escape to
+  `KEYCODE_ESCAPE`, not `KEYCODE_BACK` (keycode 158). Our HID injector is a
+  boot-protocol keyboard and cannot send BACK at all. BACK was never tested
+  until the emulator provided one.
+- The row could never have been seen. On this screen the view tree contains
+  only `content_fragment`; there is no `action_fragment` node, so the
+  preference list is not laid out and any row added to it is invisible.
+
+It also introduced a regression: `updateView()` takes
+`prevNumDevices = screen.getPreferenceCount()` and starts the autopair
+countdown only when that was 0, so a permanent extra row would have silently
+disabled autopair in no-input mode — the one case the screen exists for.
+
+## vendor_lineage/0001 — unblock the TV SDK products
+
+All three `lineage_sdk_tv_*` products set
+`PRODUCT_ENFORCE_ARTIFACT_PATH_REQUIREMENTS := relaxed` but carry no allowed
+list, so building any of them fails immediately on
+`system/etc/permissions/android.software.credentials.xml`. The
+`lineage_gsi_car_*` products already carry the entry; the TV ones were missed.
+
+**Status**: required to build at all. `lineage_sdk_tv_x86_64-bp1a-userdebug`
+builds (28m53s) and boots.
 
 ## Catapult/0001 — open the panel from a remote or keyboard button
 

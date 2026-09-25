@@ -1,0 +1,127 @@
+From 7852d464cd6e8908093e9cdbe8870bf75b35e63c Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 16:14:40 -0500
+Subject: [PATCH] Accessories: say that Back skips pairing, when there is input
+ to press it with
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The accessory pairing screen is shown during setup so that a user with no
+input device at all can pair a remote, and it scans until something is found.
+Back does leave it — the activity finishes and the caller advances — but
+nothing on screen says so. On hardware with no Bluetooth radio fitted the scan
+can never succeed, so the step looks like a dead end even though it is not.
+
+When a non-virtual keyboard, d-pad or gamepad is already attached, use a
+summary that mentions Back. The user demonstrably has something to press it
+with, so the hint is actionable; with no input attached the wording is
+unchanged and the screen behaves exactly as before.
+
+Virtual devices are ignored because the framework always exposes one
+(id -1, "Virtual"), and counting it would make the check always true.
+
+Verified on lineage_sdk_tv_x86_64: the emulator enumerates id -1 "Virtual"
+(skipped) and id 0 "qwerty2" (sources 0x301, keyboard type 2), the hint
+appears, and `input keyevent 4` leaves the screen and returns to the wizard.
+
+Change-Id: I6291972492f3105ed5302656b8bf9d855190ffe4
+---
+ Settings/res/values/strings.xml               |  4 +++
+ .../settings/accessories/AccessoryUtils.java  | 36 +++++++++++++++++++
+ .../AddAccessoryContentFragment.java          | 10 +++++-
+ 3 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index f1579fc4c..853fa096a 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -696,6 +696,10 @@
+     <!-- Description text for new accessories pairing screen. [CHAR LIMIT=150] -->
+     <string name="accessories_add_title">Searching for accessories&#8230;</string>
+     <!-- Description text for bluetooth device pairing instructions. [CHAR LIMIT=150] -->
++    <!-- Shown instead of accessories_add_bluetooth_inst when a keyboard, d-pad
++         or gamepad is already attached, so the user knows the step is optional
++         [CHAR LIMIT=NONE] -->
++    <string name="accessories_add_bluetooth_inst_skippable">Before pairing your Bluetooth devices, make sure they\'re in pairing mode. Press Back to skip this step.</string>
+     <string name="accessories_add_bluetooth_inst">Before pairing your Bluetooth devices, make sure they\'re in pairing mode.</string>
+     <!-- Extra description text for bluetooth device pairing instructions. It is a placeholder to be overrode. -->
+     <string name="accessories_add_bluetooth_inst_extra" translatable="false"/>
+diff --git a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+index 4f57811f7..a0331ab82 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
++++ b/Settings/src/com/android/tv/settings/accessories/AccessoryUtils.java
+@@ -21,6 +21,7 @@ import android.bluetooth.BluetoothClass;
+ import android.bluetooth.BluetoothDevice;
+ import android.bluetooth.BluetoothProfile;
+ import android.content.Context;
++import android.view.InputDevice;
+ import android.text.Html;
+ import android.util.Log;
+ 
+@@ -99,6 +100,41 @@ final class AccessoryUtils {
+         return device.getAlias();
+     }
+ 
++    /**
++     * Whether the device already has a usable physical input device attached —
++     * a USB/BT keyboard, a d-pad or a gamepad.
++     *
++     * The accessory pairing screen is shown during setup so that a user with no
++     * input at all can pair a remote. When something is already attached the
++     * user can navigate, and should be offered a way past the step instead of
++     * waiting on a scan that may never find anything (for example on a board
++     * with no Bluetooth radio fitted).
++     *
++     * Virtual devices are ignored: the framework always exposes a virtual
++     * keyboard, so counting it would make this always true.
++     */
++    public static boolean hasPhysicalInputDevice() {
++        for (int id : InputDevice.getDeviceIds()) {
++            final InputDevice device = InputDevice.getDevice(id);
++            if (device == null || device.isVirtual()) {
++                continue;
++            }
++            final int sources = device.getSources();
++            final boolean isDpad =
++                    (sources & InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD;
++            final boolean isGamepad =
++                    (sources & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
++            final boolean isAlphabeticKeyboard =
++                    (sources & InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
++                            && device.getKeyboardType()
++                                    == InputDevice.KEYBOARD_TYPE_ALPHABETIC;
++            if (isDpad || isGamepad || isAlphabeticKeyboard) {
++                return true;
++            }
++        }
++        return false;
++    }
++
+     public static boolean isBluetoothEnabled() {
+         return getDefaultBluetoothAdapter() != null && getDefaultBluetoothAdapter().isEnabled();
+     }
+diff --git a/Settings/src/com/android/tv/settings/accessories/AddAccessoryContentFragment.java b/Settings/src/com/android/tv/settings/accessories/AddAccessoryContentFragment.java
+index 71a59cfd3..82393031a 100644
+--- a/Settings/src/com/android/tv/settings/accessories/AddAccessoryContentFragment.java
++++ b/Settings/src/com/android/tv/settings/accessories/AddAccessoryContentFragment.java
+@@ -47,7 +47,15 @@ public class AddAccessoryContentFragment extends ProgressDialogFragment {
+         super.onViewCreated(view, savedInstanceState);
+         setTitle(R.string.accessories_add_title);
+         setIcon(R.drawable.ic_bluetooth_searching_128dp);
+-        setSummary(R.string.accessories_add_bluetooth_inst);
++        // This screen has no other exit: it is shown during setup so that a user
++        // with no input device can pair a remote, and it keeps scanning until
++        // something is found. Back does leave it, but nothing says so. When the
++        // user demonstrably has something to press Back with, say so — it is the
++        // difference between a slow step and an apparent dead end on hardware
++        // with no Bluetooth radio fitted.
++        setSummary(AccessoryUtils.hasPhysicalInputDevice()
++                ? R.string.accessories_add_bluetooth_inst_skippable
++                : R.string.accessories_add_bluetooth_inst);
+         updateExtraDescription();
+         if (getResources() != null) {
+             TypedValue lineSpacingMultiplier = new TypedValue();
+-- 
+2.43.0
+
