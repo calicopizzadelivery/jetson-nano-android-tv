@@ -288,6 +288,35 @@ new RSA key each run and re-prompts (keys now persist in
 `/srv/build/jetson-tv/adbkeys`). If adb wedges while the gadget is present,
 `settings put global adb_enabled 0` then `1` re-enumerates it.
 
+**Why the wizard is captive, and how to add a Skip.** Full source is in the
+tree: `packages/apps/SetupWizard` (LineageOS) and `packages/apps/TvSettings`.
+
+`BluetoothSetupActivity.onStartSubactivity()` launches
+`com.android.tv.settings/.accessories.AddAccessoryActivity` with
+`no_input_mode = true`. That extra is the whole mechanism — it means "the user
+has no other input device", so the screen deliberately offers no way out.
+`AddAccessoryActivity.onKeyUp()` handles `KEYCODE_BACK`, but only calls
+`cancelBtPairing()` and only when `mPairingBluetooth && !mDone`; on the
+"Searching for accessories" screen nothing has been found yet, so BACK does
+nothing at all and never calls `finish()`. `onSubactivityResult()` also
+re-launches the step when the child returns `onBackPressed`, which is why
+force-stopping the activity just brings it back.
+
+Two levels of fix:
+
+- **Blunt, no code change.** The same method already starts with
+  `if (!hasLeanback(this) || SetupWizardUtils.isBluetoothDisabled())
+  { finishAction(RESULT_SKIP); return; }`, and `isBluetoothDisabled()` reads
+  the `config.disable_bluetooth` system property. Setting that in the product
+  makefile skips the step outright — fine for a bench, wrong for a shipped box.
+- **The real fix.** Pass `no_input_mode` conditionally: false when a physical
+  keyboard or DPAD is already attached, so the screen stops being captive, and
+  add an explicit Skip in `AddAccessoryActivity` when `!mNoInputMode`. Detect
+  with `android.view.InputDevice.getDeviceIds()` and
+  `getKeyboardType() == KEYBOARD_TYPE_ALPHABETIC` (or `SOURCE_DPAD`), skipping
+  virtual devices. Note `InputDeviceCriteria` in that package is **not** the
+  helper for this — it classifies *Bluetooth* device classes, not local input.
+
 **Hardware codecs work and are preferred.** Every clip selected an
 `OMX.Nvidia.*` component, never a `c2.android.*` software fallback:
 
