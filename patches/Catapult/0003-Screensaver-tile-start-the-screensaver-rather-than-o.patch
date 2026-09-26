@@ -1,0 +1,115 @@
+From e7328780c9723e58b6fe6d812cca2e4277d9419f Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 08:24:57 -0500
+Subject: [PATCH 3/3] Screensaver tile: start the screensaver rather than open
+ its settings
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Opening the picker is the wrong default for this tile. The common reason to
+reach for it on a TV box is to park the thing now — leave a front end running
+and blank the screen without waiting out the idle timer — and the picker is
+two steps away from that.
+
+Select starts the selected dream; long press opens the picker. With nothing
+selected there is nothing to start, so select opens the picker instead and the
+tile reads "Not set" rather than "Start now".
+
+Starting goes through TvSettings' DaydreamVoiceAction, which is exported for
+com.google.android.pano.action.SLEEP and calls DreamBackend.startDreaming().
+That keeps the launcher out of needing WRITE_DREAM_STATE for itself.
+
+Verified on lineage_sdk_tv_x86_64: selecting the tile puts
+mWakefulness=Dreaming with mCurrentDream set to the selected component.
+
+Change-Id: I67b0d8fd486b3986aaf7efe16ed59354422015ea
+---
+ .../tv/launcher/SystemOptionsActivity.kt      | 41 +++++++++++++++----
+ app/src/main/res/values/strings.xml           |  2 +-
+ 2 files changed, 35 insertions(+), 8 deletions(-)
+
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+index c8887c5..7c61acb 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+@@ -323,22 +323,42 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     }
+ 
+     private fun setScreensaverButton() {
+-        // screensaver_components is unset out of the box, which is worth
+-        // surfacing: the screensaver looks enabled but has nothing to show.
++        // screensaver_components is unset out of the box, so the screensaver
++        // looks enabled while having nothing to show. With nothing selected
++        // there is nothing to start, so send the user to the picker instead.
+         val component = Settings.Secure.getString(
+             contentResolver, SCREENSAVER_COMPONENTS
+         )
+-        val status = resources.getString(
+-            if (component.isNullOrEmpty()) R.string.screensaver_not_set
+-            else R.string.screensaver_on
+-        )
++        val configured = !component.isNullOrEmpty()
+ 
+         screensaverTwoLineButton.setSpan(
+-            SpannableString(resources.getString(R.string.screensaver_status, status))
++            SpannableString(
++                resources.getString(
++                    R.string.screensaver_status,
++                    resources.getString(
++                        if (configured) R.string.screensaver_start
++                        else R.string.screensaver_not_set
++                    )
++                )
++            )
+         )
+ 
+         screensaverTwoLineButton.setOnClickListener {
++            if (configured) {
++                // Blank the box now — the point of the tile is to park a
++                // MythTV front end without waiting out the idle timer.
++                // DaydreamVoiceAction is exported and calls startDreaming()
++                // for us, which keeps this out of needing WRITE_DREAM_STATE.
++                startActivity(SCREENSAVER_START)
++                finish()
++            } else {
++                startActivity(SCREENSAVER_SETTINGS)
++            }
++        }
++
++        screensaverTwoLineButton.setOnLongClickListener {
+             startActivity(SCREENSAVER_SETTINGS)
++            true
+         }
+     }
+ 
+@@ -493,6 +513,13 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         /** DisplaySoundActivity advertises this action, so no explicit name needed. */
+         val SOUND_SETTINGS: Intent = Intent("com.android.settings.SOUND_SETTINGS")
+ 
++        /**
++         * Starts the selected dream. TvSettings' DaydreamVoiceAction is
++         * exported for this action and calls DreamBackend.startDreaming(),
++         * so the launcher does not need WRITE_DREAM_STATE itself.
++         */
++        val SCREENSAVER_START: Intent = Intent("com.google.android.pano.action.SLEEP")
++
+         /** Exported, but with no intent filter, so it needs the explicit name. */
+         val SCREENSAVER_SETTINGS: Intent = Intent().apply {
+             setClassName(
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index a0a607f..3ff49dd 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -36,7 +36,7 @@
+     <string name="audio_output_unknown">Unknown</string>
+     <string name="screensaver_status">Screensaver\n%1$s</string>
+     <string name="screensaver_not_set">Not set</string>
+-    <string name="screensaver_on">Ready</string>
++    <string name="screensaver_start">Start now</string>
+     <plurals name="accessibility_services_on">
+         <item quantity="one">%1$d service on</item>
+         <item quantity="other">%1$d services on</item>
+-- 
+2.43.0
+

@@ -1,7 +1,7 @@
 From 7b27dbe5e975d6933bd99be0161ed3f9f8af508a Mon Sep 17 00:00:00 2001
 From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
 Date: Sat, 26 Sep 2026 07:18:11 -0500
-Subject: [PATCH 2/2] Add screensaver, accessibility and audio output tiles to
+Subject: [PATCH 2/3] Add screensaver, accessibility and audio output tiles to
  the panel
 
 The system options panel carried network, accessories and the power actions.
