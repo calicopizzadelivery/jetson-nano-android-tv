@@ -80,3 +80,53 @@ returns, so it is the quickest way to check what a given player reports.
 Caveat worth testing on real hardware: silent or muted video sets no audio
 attributes, and an app can play video while reporting
 `CONTENT_TYPE_UNKNOWN`. Wake locks remain the most reliable single signal.
+
+## AmbientDream
+
+`vendor/jetson-tv/AmbientDream` (source in `scripts/in-container/AmbientDream`,
+installed into the tree by `tree-local-changes.sh`) is the dream this project
+ships: a clock over a slow slideshow of NASA photographs, modelled on the
+Chromecast ambient screen.
+
+| Behaviour | Value | Where |
+| --- | --- | --- |
+| Image rotation | 30 min | `DWELL_MS` |
+| Crossfade | 2 s | `FADE_MS` |
+| Weather refresh | 10 min | `WEATHER_MS` |
+| Disk cache | 40 images | `CACHE_MAX` |
+
+Layout follows the Chromecast reference: full-bleed photo, a clock in
+`sans-serif-black` at 104sp in the bottom-right corner with the weather
+directly beneath it, and a photo credit bottom-left. A gradient scrim
+(`res/drawable/scrim.xml`, 360dp, `#CC000000` → transparent) sits behind the
+text — a flat scrim leaves a visible horizontal edge on bright photos.
+
+### NASA images
+
+`NasaFeed` searches `images-api.nasa.gov` for a random one of seven topics and
+picks a random hit. Three things about that API that cost time:
+
+- The `href` in a search result is **not an image**. It ends in
+  `collection.json`, a manifest of that item's renditions; the image URL has to
+  be read out of it.
+- **Renditions vary per item.** `~large` is usual but not universal — `PIA24433`
+  has none — so `resolveImageUrl()` walks `~large`, `~medium`, `~orig`,
+  `~small` in order rather than string-substituting a suffix.
+- `collection.json` lists the files as **`http://`**, which Android blocks
+  under the default cleartext policy. The scheme is upgraded to `https` before
+  the fetch; the same host serves both.
+
+Search results are a mix of photography and scientific documentation plates,
+so some frames land better than others. Topic curation is the lever if the
+selection wants tightening.
+
+### Weather
+
+Open-Meteo — no API key, no account. `Weather` resolves a location once via
+`ipwho.is` (or a geocoding lookup if a place name has been set), caches
+lat/lon/city in `SharedPreferences`, then polls
+`api.open-meteo.com/v1/forecast` for `temperature_2m` and `weather_code`. The
+WMO code is mapped to a short label by `describe()`.
+
+Both services are anonymous GETs over HTTPS. Neither is configured with an
+account, and the only thing leaving the box is an approximate location.

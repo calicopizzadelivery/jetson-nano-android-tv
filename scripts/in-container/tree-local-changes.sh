@@ -143,7 +143,35 @@ install_decodetest() {
     return 0
 }
 
+# ---------------------------------------------------------------------------
+# 4. AmbientDream
+#
+# A clock over a slow slideshow of NASA photographs, for a box that is expected
+# to always be driving a television. Copied into vendor/ for the same reason as
+# decodetest: vendor/jetson-tv is ours, and extract-files.sh only cleans
+# vendor/nvidia.
+#
+#   m AmbientDream && adb install -r $OUT/product/app/AmbientDream/AmbientDream.apk
+#   settings put secure screensaver_components \
+#       org.lineageos.tv.ambient/org.lineageos.tv.ambient.AmbientDreamService
+# ---------------------------------------------------------------------------
+install_ambient_dream() {
+    local src="/opt/jetson-tv/AmbientDream"
+    local dst="${SRC}/vendor/jetson-tv/AmbientDream"
+    [[ -d ${src} ]] || return 0
+    if [[ -d ${dst} ]] && diff -rq "${src}" "${dst}" >/dev/null 2>&1; then
+        note "AmbientDream already current"
+        return 0
+    fi
+    rm -rf "${dst}"
+    mkdir -p "$(dirname "${dst}")"
+    cp -r "${src}" "${dst}"
+    note "AmbientDream installed to vendor/jetson-tv"
+    return 0
+}
+
 enable_bt_le
 fix_wifi_loader
 install_decodetest
+install_ambient_dream
 note "done"
