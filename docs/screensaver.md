@@ -101,6 +101,36 @@ directly beneath it, and a photo credit bottom-left. A gradient scrim
 (`res/drawable/scrim.xml`, 360dp, `#CC000000` → transparent) sits behind the
 text — a flat scrim leaves a visible horizontal edge on bright photos.
 
+### Adjusting it
+
+No new settings screen was needed. TvSettings already ships one at Device
+Preferences → Screen saver (`Settings/res/xml/daydream.xml`,
+`DaydreamFragment`), with three rows:
+
+| Row | Writes | Options |
+| --- | --- | --- |
+| Screen saver | `secure screensaver_components` | every installed dream, so AmbientDream appears once it is in the image |
+| Start screen saver after | `system screen_off_timeout` | 5 / 15 / 30 / 60 / 120 minutes |
+| Start now | — | calls `DreamBackend.startDreaming()` |
+
+15 minutes is the middle option and already the upstream default
+(`def_screen_off_timeout`), so the requested behaviour is what a box does out
+of the box.
+
+There is deliberately **no** UI for `sleep_timeout`, the hard sleep that the
+porg overlay pins to -1. That is the setting that would blank the television,
+and nothing in TvSettings can reach it.
+
+Two numbers are easy to confuse. `screen_off_timeout` is how long the box
+waits before the dream *starts*; `DWELL_MS` is how long each photograph stays
+up *once it is running*. They are unrelated.
+
+**Not built, worth knowing about**: AmbientDream declares no
+`settingsActivity` in `dream_info.xml`, so there is no way to override the
+weather location from the UI. `Weather` already reads a `PREF_PLACE` string
+and geocodes it — only the UI is missing. This matters when `ipwho.is` places
+the box in the wrong city, which it does on some connections.
+
 ### NASA images
 
 `NasaFeed` searches `images-api.nasa.gov` for a random one of seven topics and
