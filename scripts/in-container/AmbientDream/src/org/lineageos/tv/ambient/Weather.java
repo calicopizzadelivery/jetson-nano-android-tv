@@ -48,8 +48,7 @@ final class Weather {
 
     /** Null when the location is unknown and cannot be resolved. */
     static Conditions fetch(Context context, boolean fahrenheit) {
-        final SharedPreferences prefs =
-                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        final SharedPreferences prefs = prefs(context);
 
         if (!prefs.contains(PREF_LAT) && !resolveLocation(prefs)) {
             return null;
@@ -86,6 +85,48 @@ final class Weather {
             Log.i(TAG, "weather unavailable: " + e);
             return null;
         }
+    }
+
+    /**
+     * Set the place to use, or "" for automatic. Clears the cached coordinates
+     * so the next fetch resolves again — without that the new place would be
+     * stored and then ignored, because {@link #fetch} only resolves when it
+     * has no latitude.
+     */
+    static void setPlace(Context context, String place) {
+        prefs(context).edit()
+                .putString(PREF_PLACE, place == null ? "" : place.trim())
+                .remove(PREF_LAT)
+                .remove(PREF_LON)
+                .remove(PREF_CITY)
+                .apply();
+    }
+
+    /** "" when the location is resolved automatically. */
+    static String getPlace(Context context) {
+        return prefs(context).getString(PREF_PLACE, "");
+    }
+
+    /** The city last resolved, or "" if nothing has been resolved yet. */
+    static String getCity(Context context) {
+        return prefs(context).getString(PREF_CITY, "");
+    }
+
+    /**
+     * Resolve now rather than waiting for the next fetch, so the settings
+     * screen can say whether a typed place was actually found. Returns the
+     * resolved city name, or null if it could not be resolved.
+     */
+    static String resolveNow(Context context) {
+        final SharedPreferences prefs = prefs(context);
+        if (!resolveLocation(prefs)) {
+            return null;
+        }
+        return prefs.getString(PREF_CITY, "");
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
     private static boolean resolveLocation(SharedPreferences prefs) {

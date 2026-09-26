@@ -3,4 +3,15 @@
     <string name="dream_label">Ambient photos</string>
     <string name="credit_format">%1$s · %2$s · public domain</string>
     <string name="credit_offline">Showing cached photos</string>
+
+    <string name="settings_title">Weather location</string>
+    <string name="settings_place_auto">Automatic</string>
+    <string name="settings_place_description">City, postcode or landmark</string>
+    <string name="settings_auto">Use automatic location</string>
+    <string name="settings_auto_description">Look the location up from the network address</string>
+    <string name="settings_checking">Checking…</string>
+    <string name="settings_not_found">Could not find that place. Try a city name.</string>
+    <string name="settings_no_location">No location yet</string>
+    <string name="settings_showing_auto">Showing weather for %1$s, found automatically</string>
+    <string name="settings_showing_set">Showing weather for %1$s</string>
 </resources>

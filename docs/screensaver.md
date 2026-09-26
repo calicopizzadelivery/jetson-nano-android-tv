@@ -125,11 +125,30 @@ Two numbers are easy to confuse. `screen_off_timeout` is how long the box
 waits before the dream *starts*; `DWELL_MS` is how long each photograph stays
 up *once it is running*. They are unrelated.
 
-**Not built, worth knowing about**: AmbientDream declares no
-`settingsActivity` in `dream_info.xml`, so there is no way to override the
-weather location from the UI. `Weather` already reads a `PREF_PLACE` string
-and geocodes it — only the UI is missing. This matters when `ipwho.is` places
-the box in the wrong city, which it does on some connections.
+### Weather location
+
+`AmbientSettingsActivity` is a leanback `GuidedStepSupportFragment` — the same
+full-screen look as the rest of TV settings. One editable row for a place name
+and one row to go back to automatic. Typing a place resolves it immediately
+rather than leaving it to the next fetch, so a name that geocodes to nothing
+says "Could not find that place" then and there instead of quietly blanking the
+weather line.
+
+It is declared as the dream's `settingsActivity` and reached from
+Settings → Screen saver → **Screen saver options** (see
+`patches/TvSettings/0002`).
+
+Two leanback details that are easy to get wrong:
+
+- **`title` and `editTitle` are different fields.** `title` is what the row
+  shows; `editTitle` is what the edit box opens with. Setting only `title`
+  means the placeholder "Automatic" is already in the box, and typing appends
+  to it — the first attempt here stored `AutomaticSeattle`.
+- **The typed text comes back in whichever field was non-null.**
+  `GuidedActionAdapterGroup.updateTextIntoAction` writes to `editTitle` if
+  `getEditTitle() != null`, and only otherwise to `title`. Since `editTitle` is
+  always set here, `onGuidedActionEditedAndProceed` must read `getEditTitle()`;
+  reading `getTitle()` returns the stale display text.
 
 ### NASA images
 

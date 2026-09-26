@@ -8,4 +8,13 @@ android_app {
     manifest: "AndroidManifest.xml",
     sdk_version: "current",
     product_specific: true,
+
+    // Leanback for the settings screen's GuidedStep UI, which is what the
+    // rest of the TV settings look like. FragmentActivity comes from
+    // androidx.fragment rather than appcompat on purpose: an AppCompatActivity
+    // would demand an AppCompat theme, and Theme.Leanback.GuidedStep is not one.
+    static_libs: [
+        "androidx.leanback_leanback",
+        "androidx.fragment_fragment",
+    ],
 }

@@ -131,6 +131,28 @@ This one is **not upstreamable at all**, and unlike `porg/0001` there is no
 argument to be had about it: AmbientDream lives in `vendor/jetson-tv`, which
 is ours.
 
+## TvSettings/0002 — a row for the screen saver's own settings
+
+Upstream reads a dream's `settingsActivity` into
+`DreamBackend.DreamInfo.settingsComponentName` and `setActiveDream()` launches
+it — but `onPreferenceChange` fires only when the selection *changes*. Once a
+dream is the active one, selecting it again is not a change, so its settings
+become unreachable. A screen saver with anything to configure is configurable
+exactly once, at the moment it is first chosen.
+
+Adds a "Screen saver options" row, visible only when the active dream declares
+a `settingsActivity`. Dreams without one see no change.
+
+Only `daydream.xml` gains the row. The X flavour has no dream picker at all —
+it delegates to an `ambient_settings` slice — so there is nothing there to
+attach to.
+
+**Status**: verified on `lineage_sdk_tv_x86_64` with AmbientDream installed.
+The row appears, launches the settings activity, disappears when Colors is
+selected, and returns on reselecting. This one **is** upstreamable: it is a
+generic gap, not a porg policy, and it is what makes
+`patches/porg/0002`'s screensaver configurable.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set

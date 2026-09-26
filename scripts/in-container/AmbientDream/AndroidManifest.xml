@@ -28,5 +28,13 @@
                 android:resource="@xml/dream_info" />
         </service>
 
+        <!-- The dream's settingsActivity. Exported so TvSettings can launch
+             it; it edits nothing but this app's own preferences. -->
+        <activity
+            android:name=".AmbientSettingsActivity"
+            android:exported="true"
+            android:label="@string/settings_title"
+            android:theme="@style/Theme.Leanback.GuidedStep" />
+
     </application>
 </manifest>

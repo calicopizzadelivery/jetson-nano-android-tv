@@ -1,0 +1,154 @@
+From df3b0f2b0182694b343e8acc15cad36146318158 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 12:54:55 -0500
+Subject: [PATCH 2/2] Daydream: add a row for the screen saver's own settings
+
+DreamBackend already reads a dream's settingsActivity into
+DreamInfo.settingsComponentName, and setActiveDream() launches it. But
+onPreferenceChange only fires when the selection changes, so once a dream
+is the active one its settings are unreachable -- selecting it again is
+not a change. A screen saver with anything to configure is therefore
+configurable exactly once, at the moment it is first chosen.
+
+Adds a "Screen saver options" row, visible only when the active dream
+declares a settingsActivity, so it costs nothing for dreams that do not.
+
+Only daydream.xml gains the row. The X flavour has no dream picker at all
+-- it delegates to an ambient_settings slice -- so there is nothing there
+for this to attach to.
+
+Visibility is settled in refreshActiveDreamPref(), which is where
+mDreamInfos becomes valid, and again in onPreferenceChange(). The two-panel
+flavour happens to resume the fragment when the chooser closes, which would
+refresh it anyway, but that is incidental and not worth depending on.
+
+Test: lineage_sdk_tv_x86_64. The row appears for a dream declaring a
+settingsActivity, launches it, disappears when Colors is selected, and
+comes back on reselecting.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Icb5a011f535043c758925cb441e68be8295f0297
+---
+ Settings/res/values/strings.xml               |  2 +
+ Settings/res/xml/daydream.xml                 |  5 ++
+ .../display/daydream/DaydreamFragment.java    | 47 +++++++++++++++++++
+ 3 files changed, 54 insertions(+)
+
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index 853fa096a..9b445a6f1 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -2478,6 +2478,8 @@
+     <string name="device_daydreams_select">Screen saver</string>
+     <!-- Screen saver choice for testing the selected screen saver [CHAR LIMIT=40] -->
+     <string name="device_daydreams_test">Start now</string>
++    <!-- Screen saver settings: title for the row that opens the selected screen saver's own settings. [CHAR LIMIT=30] -->
++    <string name="device_daydreams_settings">Screen saver options</string>
+     <!-- Screen saver choice for configuring the time before the device goes to sleep [CHAR LIMIT=40] -->
+     <string name="device_daydreams_sleep">When to start</string>
+     <!-- Screen saver description for configuring the time before the device goes to sleep [CHAR LIMIT=NONE] -->
+diff --git a/Settings/res/xml/daydream.xml b/Settings/res/xml/daydream.xml
+index e6ac0abbd..1fbf67c9c 100644
+--- a/Settings/res/xml/daydream.xml
++++ b/Settings/res/xml/daydream.xml
+@@ -26,6 +26,11 @@
+         android:summary="%s"
+         android:dialogTitle="@string/device_daydreams_select" />
+ 
++    <!-- Shown only when the selected screen saver declares a settingsActivity. -->
++    <Preference
++        android:key="dreamSettings"
++        android:title="@string/device_daydreams_settings" />
++
+     <com.android.tv.settings.device.display.daydream.DreamTimePreference
+         android:key="dreamTime"
+         android:persistent="true"
+diff --git a/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java b/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
+index e4f3493ff..5d6bad65e 100644
+--- a/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
++++ b/Settings/src/com/android/tv/settings/device/display/daydream/DaydreamFragment.java
+@@ -65,6 +65,7 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+     private static final String KEY_ACTIVE_DREAM = "activeDream";
+     private static final String KEY_DREAM_TIME = "dreamTime";
+     private static final String KEY_DREAM_NOW = "dreamNow";
++    private static final String KEY_DREAM_SETTINGS = "dreamSettings";
+     private static final String KEY_AMBIENT_SETTINGS = "ambient_settings";
+ 
+     private static final String DREAM_COMPONENT_NONE = "NONE";
+@@ -148,6 +149,14 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+         final Preference dreamNowPref = findPreference(KEY_DREAM_NOW);
+         dreamNowPref.setEnabled(mBackend.isEnabled());
+ 
++        // refreshActiveDreamPref() above ran before mActiveDreamPref was
++        // assigned, so it returned early and mDreamInfos is still empty. Start
++        // hidden and let the first real refresh decide.
++        final Preference dreamSettingsPref = findPreference(KEY_DREAM_SETTINGS);
++        if (dreamSettingsPref != null) {
++            dreamSettingsPref.setVisible(false);
++        }
++
+         updateAmbientSettings();
+     }
+ 
+@@ -168,6 +177,33 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+             activeDreamPref.setValue(mBackend.isEnabled() && currentDreamComponent != null
+                     ? currentDreamComponent.toShortString() : DREAM_COMPONENT_NONE);
+         });
++
++        refreshDreamSettingsPref();
++    }
++
++    /**
++     * A screen saver may declare a settingsActivity, which DreamBackend already
++     * reads into DreamInfo. Without a row for it the only way in is
++     * setActiveDream(), which fires on selection change alone — so once the
++     * dream is the active one its settings become unreachable.
++     */
++    private void refreshDreamSettingsPref() {
++        final Preference dreamSettingsPref = findPreference(KEY_DREAM_SETTINGS);
++        if (dreamSettingsPref != null) {
++            dreamSettingsPref.setVisible(getActiveDreamSettings() != null);
++        }
++    }
++
++    private ComponentName getActiveDreamSettings() {
++        if (!mBackend.isEnabled()) {
++            return null;
++        }
++        final ComponentName activeDream = mBackend.getActiveDream();
++        if (activeDream == null) {
++            return null;
++        }
++        final DreamBackend.DreamInfo info = mDreamInfos.get(activeDream.toShortString());
++        return info == null ? null : info.settingsComponentName;
+     }
+ 
+     private void refreshDreamInfoMap(List<DreamBackend.DreamInfo> infos,
+@@ -191,6 +227,11 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+             case KEY_ACTIVE_DREAM:
+                 logEntrySelected(TvSettingsEnums.PREFERENCES_SCREENSAVER_CHOOSER);
+                 setActiveDream((String) newValue);
++                // The two-panel flavour happens to resume the fragment when the
++                // chooser closes, which refreshes this anyway. Do not rely on
++                // that: setActiveDream has already updated the backend, so the
++                // row can be settled here for every flavour.
++                refreshDreamSettingsPref();
+                 break;
+             case KEY_DREAM_TIME:
+                 final int sleepTimeout = Integer.parseInt((String) newValue);
+@@ -239,6 +280,12 @@ public class DaydreamFragment extends SettingsPreferenceFragment
+                 logEntrySelected(TvSettingsEnums.PREFERENCES_SCREENSAVER_START_NOW);
+                 mBackend.startDreaming();
+                 return true;
++            case KEY_DREAM_SETTINGS:
++                final ComponentName dreamSettings = getActiveDreamSettings();
++                if (dreamSettings != null) {
++                    startActivity(new Intent().setComponent(dreamSettings));
++                }
++                return true;
+             default:
+                 return super.onPreferenceTreeClick(preference);
+         }
+-- 
+2.43.0
+
