@@ -170,8 +170,26 @@ install_ambient_dream() {
     return 0
 }
 
+# The product makefile that puts AmbientDream in the image. Lives beside the
+# app rather than in device/nvidia/porg so that porg's own tree carries only an
+# inherit-product-if-exists and still builds without us.
+install_vendor_mk() {
+    local src="/opt/jetson-tv/jetson-tv.mk"
+    local dst="${SRC}/vendor/jetson-tv/jetson-tv.mk"
+    [[ -f ${src} ]] || return 0
+    if cmp -s "${src}" "${dst}"; then
+        note "vendor/jetson-tv/jetson-tv.mk already current"
+        return 0
+    fi
+    mkdir -p "$(dirname "${dst}")"
+    cp "${src}" "${dst}"
+    note "vendor/jetson-tv/jetson-tv.mk installed"
+    return 0
+}
+
 enable_bt_le
 fix_wifi_loader
 install_decodetest
 install_ambient_dream
+install_vendor_mk
 note "done"

@@ -1,0 +1,62 @@
+From c33b4f9379d8178d619f488d41b1325a1b529c16 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 12:23:51 -0500
+Subject: [PATCH 2/2] porg: ship AmbientDream as the screensaver
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The previous commit pointed config_dreamsDefaultComponent at
+com.android.dreams.basic.Colors, which was only ever a dream that exists.
+AmbientDream is the one this box should show: a clock over a slow
+slideshow of NASA photographs, with local weather.
+
+The package comes in through vendor/jetson-tv/jetson-tv.mk, inherited
+with inherit-product-if-exists so a tree without vendor/jetson-tv still
+configures — it just falls back to having no dream installed, which is
+where upstream already is.
+
+Verified in the built image: AmbientDream.apk in system/product/app, and
+framework-res__lineage_porg__auto_generated_rro_vendor carries the new
+component string.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ia19cb96568fd4eacf843c675344c3151563b0e4b
+---
+ device.mk                                              | 5 +++++
+ overlay/frameworks/base/core/res/res/values/config.xml | 5 +++--
+ 2 files changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/device.mk b/device.mk
+index b94ab53..71ad411 100644
+--- a/device.mk
++++ b/device.mk
+@@ -25,4 +25,9 @@ include device/nvidia/shield-common/shield.mk
+ DEVICE_PACKAGE_OVERLAYS += \
+     device/nvidia/porg/overlay
+ 
++# AmbientDream, the screensaver the overlay above points at. Optional on
++# purpose: a tree without vendor/jetson-tv still configures, it just has no
++# dream to show.
++$(call inherit-product-if-exists, vendor/jetson-tv/jetson-tv.mk)
++
+ $(call inherit-product, device/nvidia/foster/device.mk)
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+index 11ef56f..92040dd 100644
+--- a/overlay/frameworks/base/core/res/res/values/config.xml
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -9,8 +9,9 @@
+          DeskClock is not part of an Android TV build, so screensaver_components
+          is left unset on first boot. The screensaver then reports as enabled
+          while having nothing to show. Point it at a dream that is actually
+-         installed. -->
+-    <string name="config_dreamsDefaultComponent" translatable="false">com.android.dreams.basic/com.android.dreams.basic.Colors</string>
++         installed: AmbientDream, from vendor/jetson-tv, a clock over a slow
++         slideshow of NASA photographs. -->
++    <string name="config_dreamsDefaultComponent" translatable="false">org.lineageos.tv.ambient/org.lineageos.tv.ambient.AmbientDreamService</string>
+ 
+     <!-- Dream when the box goes idle. The framework default is false, which
+          suits a phone, where idling means turning the panel off. A set-top box
+-- 
+2.43.0
+

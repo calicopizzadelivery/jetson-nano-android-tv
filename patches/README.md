@@ -100,6 +100,37 @@ One thing arguably *is* an upstream bug rather than policy:
 build installs. That belongs in `device/google/atv` rather than here, and is
 worth raising separately if we ever have a reason to send patches to AOSP.
 
+## porg/0002 — ship AmbientDream as the screensaver
+
+`porg/0001` pointed `config_dreamsDefaultComponent` at
+`com.android.dreams.basic.Colors` because it was the only dream installed.
+This repoints it at `AmbientDream` (see `docs/screensaver.md`) and pulls the
+package in through `vendor/jetson-tv/jetson-tv.mk`.
+
+The inherit is `inherit-product-if-exists`, so a checkout of
+`device/nvidia/porg` without `vendor/jetson-tv` still configures. It then has
+no dream installed — which is exactly where upstream is today, so the guard
+costs nothing and loses nothing.
+
+The dream component is set in **one** place, porg's overlay, on purpose. It is
+tempting to put it in a second overlay dir under `vendor/jetson-tv` so the
+package and the pointer travel together, but `generate_enforce_rro.mk` builds
+**one** RRO per (target, partition) with every overlay dir handed to aapt2 as
+`LOCAL_RESOURCE_DIR`. Two dirs setting the same resource would then be settled
+by aapt2's argument ordering rather than by anything written down.
+
+**Status**: verified in the built image —
+`system/product/app/AmbientDream/AmbientDream.apk` is installed, and
+`framework-res__lineage_porg__auto_generated_rro_vendor` dumps
+`config_dreamsDefaultComponent` as
+`org.lineageos.tv.ambient/org.lineageos.tv.ambient.AmbientDreamService` with
+`config_dreamsActivatedOnSleepByDefault` true. Not yet run on hardware; the
+bench is powered down.
+
+This one is **not upstreamable at all**, and unlike `porg/0001` there is no
+argument to be had about it: AmbientDream lives in `vendor/jetson-tv`, which
+is ours.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set
