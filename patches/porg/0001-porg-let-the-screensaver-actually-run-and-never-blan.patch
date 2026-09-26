@@ -1,14 +1,14 @@
-From e52ae8bfa8e02cb440a49b0fdc0cb864c020c62f Mon Sep 17 00:00:00 2001
+From 0b73dcfe3b732a74a6afdea629582c5e5a0f5f64 Mon Sep 17 00:00:00 2001
 From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
 Date: Sat, 26 Sep 2026 08:48:37 -0500
-Subject: [PATCH] porg: let the screensaver actually run
+Subject: [PATCH] porg: let the screensaver actually run, and never blank
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 Out of the box the screensaver on this device is enabled, has nothing
-selected, and can never start. Three separate defaults combine to produce
-that, and none of them is wrong on its own.
+selected, and can never start. Left long enough the box then blanks entirely.
+Four defaults combine to produce that, and none of them is wrong on its own.
 
 config_dreamsDefaultComponent points at com.android.deskclock, which is not
 part of an Android TV build, so screensaver_components is never populated and
@@ -16,37 +16,42 @@ the screensaver reports as on with nothing to show. Point it at
 com.android.dreams.basic.Colors, which is installed.
 
 config_dreamsActivatedOnSleepByDefault is false, which is right for a phone
-where idling means turning the panel off. A set-top box is driving someone's
-television, so blanking to a screensaver is the expected behaviour and it
-keeps a static UI off an OLED panel.
+where idling means turning the panel off. This box is driving someone's
+television, so blanking to a screensaver is the expected resting state.
 
 def_stay_on_while_plugged_in is set true for every Android TV device by
 device/google/atv, with the comment "Keep screen on at all times by default".
 A set-top box is permanently on mains, so mIsPowered is always true, mStayOn
 follows, and the user-activity timer never expires — no screensaver can start
-regardless of the other two. That decision is deliberate upstream and stays
+regardless of the other three. That decision is deliberate upstream and stays
 correct for panels that want to be always on, so this overrides it here rather
 than changing it for everyone.
 
-The rest of the timing already assumes a screensaver and is left alone:
+def_sleep_timeout is 86400000 upstream, "24 hours default for TV devices",
+which means a box left alone dreams for a day and then goes to sleep with no
+video output at all. This device should always be driving the television, so
+sleep is disabled: PowerManagerService.getSleepTimeoutLocked() treats any
+value <= 0 as -1, which removes the sleep transition and stops it clamping
+screen_off_timeout.
+
+The idle timing itself is already right upstream and is left alone —
 device/google/atv sets def_screen_off_timeout to 900000 with the comment
-"Default screen timeout set when setting screensaver", and def_sleep_timeout
-to 86400000 so a hard sleep does not pre-empt the dream. Those two race if
-sleep_timeout is ever made the shorter of the pair, which presents as the box
-blanking to Asleep with mCurrentDream null.
+"Default screen timeout set when setting screensaver".
 
 Verified in the built RROs: framework-res carries
 config_dreamsActivatedOnSleepByDefault=true and the Colors component,
-SettingsProvider carries def_stay_on_while_plugged_in=false. The runtime
-behaviour was confirmed separately on lineage_sdk_tv_x86_64, where the same
-combination gives mWakefulness=Dreaming after the idle timeout.
+SettingsProvider carries def_stay_on_while_plugged_in=false and
+def_sleep_timeout=-1. Runtime behaviour was confirmed on
+lineage_sdk_tv_x86_64: with a short screen_off_timeout the box reaches
+mWakefulness=Dreaming and is still on the same DreamRecord a minute later,
+where a positive sleep_timeout instead took it to Asleep.
 
-Change-Id: I20e5d0ebcd52f672fe51f9752ba620a53201a78b
+Change-Id: I330b2281c0e084b17173e1062e0364d1f869d082
 ---
- device.mk                                     |  5 +++++
- .../base/core/res/res/values/config.xml       | 21 +++++++++++++++++++
- .../SettingsProvider/res/values/defaults.xml  | 21 +++++++++++++++++++
- 3 files changed, 47 insertions(+)
+ device.mk                                     |  5 +++
+ .../base/core/res/res/values/config.xml       | 21 +++++++++++
+ .../SettingsProvider/res/values/defaults.xml  | 35 +++++++++++++++++++
+ 3 files changed, 61 insertions(+)
  create mode 100644 overlay/frameworks/base/core/res/res/values/config.xml
  create mode 100644 overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
 
@@ -93,10 +98,10 @@ index 0000000..11ef56f
 +</resources>
 diff --git a/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml b/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
 new file mode 100644
-index 0000000..99a4c9a
+index 0000000..65ca97b
 --- /dev/null
 +++ b/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,35 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<!--
 +     SPDX-FileCopyrightText: 2026 The LineageOS Project
@@ -116,6 +121,20 @@ index 0000000..99a4c9a
 +         def_sleep_timeout is 86400000 so a hard sleep does not pre-empt the
 +         dream. Turning this off is what lets that intent take effect. -->
 +    <bool name="def_stay_on_while_plugged_in">false</bool>
++
++    <!-- Never hard-sleep. device/google/atv sets this to 86400000 with the
++         comment "ms until the system goes to sleep, 24 hours default for TV
++         devices", which means a box left alone dreams for a day and then
++         blanks. This box drives a television that should always be showing
++         something, so the screensaver is the resting state rather than a
++         waypoint on the way to no signal.
++
++         PowerManagerService.getSleepTimeoutLocked() returns -1 for any value
++         <= 0, which disables the sleep transition entirely and also stops it
++         clamping screen_off_timeout. Verified: with this set the box reaches
++         mWakefulness=Dreaming and stays there on the same DreamRecord, rather
++         than moving on to Asleep. -->
++    <integer name="def_sleep_timeout">-1</integer>
 +
 +</resources>
 -- 

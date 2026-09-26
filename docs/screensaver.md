@@ -8,7 +8,7 @@ observed, not inferred from documentation.
 | Setting | Value | Why |
 | --- | --- | --- |
 | `system screen_off_timeout` | `900000` | **This is the idle timer that starts the dream.** 15 minutes. |
-| `secure sleep_timeout` | `86400000` | Must stay *longer* than the above, or it wins the race and the box hard-sleeps instead of dreaming. |
+| `secure sleep_timeout` | `-1` | **Never sleep.** `PowerManagerService.getSleepTimeoutLocked()` returns -1 for any value <= 0, removing the sleep transition. A positive value blanks the box when it expires — the upstream TV default of `86400000` means it dreams for a day, then shows no signal. |
 | `secure screensaver_enabled` | `1` | On by default already. |
 | `secure screensaver_activate_on_sleep` | `1` | `0` out of the box. |
 | `secure screensaver_components` | a dream | **Unset out of the box**, so the screensaver reads as enabled with nothing to show. |
@@ -26,8 +26,22 @@ is what naps into a dream. Setting `sleep_timeout` short produces
 `mWakefulness=Asleep` with `mCurrentDream=null` — the box blanks but never
 dreams. Correct ordering gives `mWakefulness=Dreaming`.
 
+**The box must never blank.** A dream is video output, so dreaming is the
+resting state; sleeping is not. Verified: with `sleep_timeout` at -1 the box
+reaches `mWakefulness=Dreaming` and stays on the same `DreamRecord`
+indefinitely. With a positive value it goes to `Asleep` when that expires.
+
 **Only one dream is installed**: `com.android.dreams.basic.Colors`, a colour
 gradient. Fine as a proof of life, not what a MythTV box should ship.
+
+The framework default, `com.android.deskclock/…Screensaver`, is the DeskClock
+app's dream — a large digital clock. DeskClock is AOSP's stock Clock app
+(alarms, timer, stopwatch, world clock) and is **not installed on Android TV**,
+which is the whole reason `screensaver_components` comes up empty. Its source
+is in the tree at `packages/apps/DeskClock`, and `packages/screensavers/`
+holds two more: `Basic` (Colors) and `PhotoTable` (a photo slideshow, with
+`PhotoTableDream` and `FlipperDream`). Any of the three could be built into
+the product; none is a good MythTV screen as-is.
 
 ## Starting a dream on demand
 
