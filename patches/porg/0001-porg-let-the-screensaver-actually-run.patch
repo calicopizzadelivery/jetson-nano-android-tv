@@ -1,0 +1,123 @@
+From e52ae8bfa8e02cb440a49b0fdc0cb864c020c62f Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 08:48:37 -0500
+Subject: [PATCH] porg: let the screensaver actually run
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Out of the box the screensaver on this device is enabled, has nothing
+selected, and can never start. Three separate defaults combine to produce
+that, and none of them is wrong on its own.
+
+config_dreamsDefaultComponent points at com.android.deskclock, which is not
+part of an Android TV build, so screensaver_components is never populated and
+the screensaver reports as on with nothing to show. Point it at
+com.android.dreams.basic.Colors, which is installed.
+
+config_dreamsActivatedOnSleepByDefault is false, which is right for a phone
+where idling means turning the panel off. A set-top box is driving someone's
+television, so blanking to a screensaver is the expected behaviour and it
+keeps a static UI off an OLED panel.
+
+def_stay_on_while_plugged_in is set true for every Android TV device by
+device/google/atv, with the comment "Keep screen on at all times by default".
+A set-top box is permanently on mains, so mIsPowered is always true, mStayOn
+follows, and the user-activity timer never expires — no screensaver can start
+regardless of the other two. That decision is deliberate upstream and stays
+correct for panels that want to be always on, so this overrides it here rather
+than changing it for everyone.
+
+The rest of the timing already assumes a screensaver and is left alone:
+device/google/atv sets def_screen_off_timeout to 900000 with the comment
+"Default screen timeout set when setting screensaver", and def_sleep_timeout
+to 86400000 so a hard sleep does not pre-empt the dream. Those two race if
+sleep_timeout is ever made the shorter of the pair, which presents as the box
+blanking to Asleep with mCurrentDream null.
+
+Verified in the built RROs: framework-res carries
+config_dreamsActivatedOnSleepByDefault=true and the Colors component,
+SettingsProvider carries def_stay_on_while_plugged_in=false. The runtime
+behaviour was confirmed separately on lineage_sdk_tv_x86_64, where the same
+combination gives mWakefulness=Dreaming after the idle timeout.
+
+Change-Id: I20e5d0ebcd52f672fe51f9752ba620a53201a78b
+---
+ device.mk                                     |  5 +++++
+ .../base/core/res/res/values/config.xml       | 21 +++++++++++++++++++
+ .../SettingsProvider/res/values/defaults.xml  | 21 +++++++++++++++++++
+ 3 files changed, 47 insertions(+)
+ create mode 100644 overlay/frameworks/base/core/res/res/values/config.xml
+ create mode 100644 overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
+
+diff --git a/device.mk b/device.mk
+index 0f893a4..b94ab53 100644
+--- a/device.mk
++++ b/device.mk
+@@ -20,4 +20,9 @@ TARGET_TEGRA_HEALTH ?= nobattery
+ # Only include Shield apps for first party targets
+ include device/nvidia/shield-common/shield.mk
+ 
++# Screensaver policy for a set-top box; see overlay/ for why each value differs
++# from the Android TV defaults.
++DEVICE_PACKAGE_OVERLAYS += \
++    device/nvidia/porg/overlay
++
+ $(call inherit-product, device/nvidia/foster/device.mk)
+diff --git a/overlay/frameworks/base/core/res/res/values/config.xml b/overlay/frameworks/base/core/res/res/values/config.xml
+new file mode 100644
+index 0000000..11ef56f
+--- /dev/null
++++ b/overlay/frameworks/base/core/res/res/values/config.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<resources>
++
++    <!-- The framework default is com.android.deskclock/…Screensaver, and
++         DeskClock is not part of an Android TV build, so screensaver_components
++         is left unset on first boot. The screensaver then reports as enabled
++         while having nothing to show. Point it at a dream that is actually
++         installed. -->
++    <string name="config_dreamsDefaultComponent" translatable="false">com.android.dreams.basic/com.android.dreams.basic.Colors</string>
++
++    <!-- Dream when the box goes idle. The framework default is false, which
++         suits a phone, where idling means turning the panel off. A set-top box
++         is driving someone's television: blanking to a screensaver is the
++         expected behaviour, and it protects OLED panels from a static UI. -->
++    <bool name="config_dreamsActivatedOnSleepByDefault">true</bool>
++
++</resources>
+diff --git a/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml b/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
+new file mode 100644
+index 0000000..99a4c9a
+--- /dev/null
++++ b/overlay/frameworks/base/packages/SettingsProvider/res/values/defaults.xml
+@@ -0,0 +1,21 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<resources>
++
++    <!-- device/google/atv sets this true for every Android TV device, with the
++         comment "Keep screen on at all times by default". A set-top box is
++         permanently on mains, so mIsPowered is always true, mStayOn follows,
++         and the user-activity timer never expires — which means the screensaver
++         can never start no matter how it is configured.
++
++         The rest of the timing in that same overlay already assumes a
++         screensaver: def_screen_off_timeout is 900000 with the comment
++         "Default screen timeout set when setting screensaver", and
++         def_sleep_timeout is 86400000 so a hard sleep does not pre-empt the
++         dream. Turning this off is what lets that intent take effect. -->
++    <bool name="def_stay_on_while_plugged_in">false</bool>
++
++</resources>
+-- 
+2.43.0
+

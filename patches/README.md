@@ -66,6 +66,40 @@ laid out two per row alongside the existing ones.
 **Status**: verified on `lineage_sdk_tv_x86_64`. All three render with live
 state and both new intents resolve and launch.
 
+## porg/0001 — let the screensaver actually run
+
+Device-level screensaver policy: point `config_dreamsDefaultComponent` at a
+dream that exists on TV, set `config_dreamsActivatedOnSleepByDefault`, and
+override `def_stay_on_while_plugged_in` back to false.
+
+**Status**: verified in the built RROs (`framework-res__lineage_porg…` and
+`SettingsProvider__lineage_porg…`). Runtime behaviour confirmed separately on
+the emulator, where the same combination yields `mWakefulness=Dreaming`.
+
+### Why this one is device-level and not upstream
+
+Worth writing down, because the instinct is to push it up and it would be
+wrong here. `device/google/atv` sets `def_stay_on_while_plugged_in` to true
+for every Android TV device, with the comment "Keep screen on at all times by
+default". That is a deliberate AOSP decision and it stays correct for
+always-on panels and digital signage. Changing it upstream would alter
+behaviour for every TV device to suit ours.
+
+The rest of the timing in that same AOSP overlay already assumes a
+screensaver — `def_screen_off_timeout` is 900000 "when setting screensaver",
+`def_sleep_timeout` is 86400000 so a hard sleep does not pre-empt the dream —
+so there is nothing to change there either. The 15-minute figure we wanted is
+already the upstream default.
+
+What that leaves genuinely upstreamable is the *behaviour*, not the policy:
+the launcher tiles and the pairing hint, which are in the queue above. The
+policy stays with the product.
+
+One thing arguably *is* an upstream bug rather than policy:
+`config_dreamsDefaultComponent` pointing at DeskClock, which no Android TV
+build installs. That belongs in `device/google/atv` rather than here, and is
+worth raising separately if we ever have a reason to send patches to AOSP.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set
