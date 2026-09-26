@@ -1,0 +1,292 @@
+From 7b27dbe5e975d6933bd99be0161ed3f9f8af508a Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 26 Sep 2026 07:18:11 -0500
+Subject: [PATCH 2/2] Add screensaver, accessibility and audio output tiles to
+ the panel
+
+The system options panel carried network, accessories and the power actions.
+These three are the ones a TV box is actually asked for mid-session, and all
+three report state rather than just linking to a settings screen, so the panel
+is worth opening even when nothing needs changing.
+
+Audio output reads the live output from AudioManager rather than listing what
+is attached, ordered by what overrides what: a connected A2DP sink or wired
+headphones take audio away from HDMI, and HDMI takes it from the built-in
+speaker. It opens DisplaySoundActivity, which advertises
+com.android.settings.SOUND_SETTINGS.
+
+Screensaver surfaces something easy to miss: screensaver_enabled is 1 out of
+the box while screensaver_components is unset, so the screensaver looks on and
+has nothing to show. The tile says "Not set" in that state. It opens
+DaydreamActivity by explicit name, since that activity is exported but carries
+no intent filter, and ACTION_DREAM_SETTINGS resolves to nothing on TV.
+
+Accessibility reports how many services are actually running rather than
+simply linking to the screen, because "no services on" is the common case on a
+TV box and is worth seeing at a glance.
+
+Laid out two per row alongside the existing tiles.
+
+Verified on lineage_sdk_tv_x86_64: all three render with live state, and both
+new intents resolve and launch.
+
+Change-Id: Ia3edb49f111fe27fa25faf012c8e1ec83abd0f3a
+---
+ .../tv/launcher/SystemOptionsActivity.kt      | 108 ++++++++++++++++++
+ .../res/layout/activity_system_options.xml    |  55 ++++++++-
+ app/src/main/res/values/strings.xml           |  15 +++
+ 3 files changed, 173 insertions(+), 5 deletions(-)
+
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+index df60c11..c8887c5 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+@@ -8,6 +8,8 @@ package org.lineageos.tv.launcher
+ import android.app.ActivityOptions
+ import android.app.PendingIntent
+ import android.bluetooth.BluetoothManager
++import android.media.AudioDeviceInfo
++import android.media.AudioManager
+ import android.content.Intent
+ import android.icu.text.DateFormat
+ import android.net.ConnectivityManager
+@@ -56,7 +58,9 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     private val notificationViewModel: NotificationViewModel by viewModels()
+ 
+     // Views
++    private val accessibilityTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.accessibilityTwoLineButton)!! }
+     private val allowNotificationAccessMaterialButton by lazy { findViewById<MaterialButton>(R.id.allowNotificationAccessMaterialButton)!! }
++    private val audioOutputTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.audioOutputTwoLineButton)!! }
+     private val bluetoothTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.bluetoothTwoLineButton)!! }
+     private val dateTextView by lazy { findViewById<TextView>(R.id.dateTextView)!! }
+     private val networkTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.networkTwoLineButton)!! }
+@@ -65,6 +69,7 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     private val notificationsVerticalGridView by lazy { findViewById<VerticalGridView>(R.id.notificationsVerticalGridView)!! }
+     private val panelShortcutTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.panelShortcutTwoLineButton)!! }
+     private val powerMaterialButton by lazy { findViewById<MaterialButton>(R.id.powerMaterialButton)!! }
++    private val screensaverTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.screensaverTwoLineButton)!! }
+     private val settingsButton by lazy { findViewById<MaterialButton>(R.id.settingsMaterialButton)!! }
+     private val sleepMaterialButton by lazy { findViewById<MaterialButton>(R.id.sleepMaterialButton)!! }
+ 
+@@ -100,6 +105,9 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         setNetworkButton()
+         setBluetoothButton()
+         setPanelShortcutButton()
++        setAccessibilityButton()
++        setScreensaverButton()
++        setAudioOutputButton()
+ 
+         settingsButton.setOnClickListener {
+             startActivity(SETTINGS)
+@@ -274,6 +282,91 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         networkTwoLineButton.setSpan(networkSpan)
+     }
+ 
++    private fun setAudioOutputButton() {
++        // Which output is actually live, not just which are attached. Ordered by
++        // what overrides what: a connected A2DP sink or headphones take audio
++        // away from HDMI, and HDMI takes it from the built-in speaker.
++        val audioManager = getSystemService(AudioManager::class.java)
++        val types = audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
++            ?.map { it.type }
++            ?.toSet()
++            ?: emptySet()
++
++        val status = resources.getString(
++            when {
++                types.contains(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) ->
++                    R.string.audio_output_bluetooth
++
++                types.contains(AudioDeviceInfo.TYPE_WIRED_HEADPHONES) ||
++                        types.contains(AudioDeviceInfo.TYPE_WIRED_HEADSET) ->
++                    R.string.audio_output_headphones
++
++                types.contains(AudioDeviceInfo.TYPE_HDMI) ||
++                        types.contains(AudioDeviceInfo.TYPE_HDMI_ARC) ||
++                        types.contains(AudioDeviceInfo.TYPE_HDMI_EARC) ->
++                    R.string.audio_output_hdmi
++
++                types.contains(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) ->
++                    R.string.audio_output_speaker
++
++                else -> R.string.audio_output_unknown
++            }
++        )
++
++        audioOutputTwoLineButton.setSpan(
++            SpannableString(resources.getString(R.string.audio_output_status, status))
++        )
++
++        audioOutputTwoLineButton.setOnClickListener {
++            startActivity(SOUND_SETTINGS)
++        }
++    }
++
++    private fun setScreensaverButton() {
++        // screensaver_components is unset out of the box, which is worth
++        // surfacing: the screensaver looks enabled but has nothing to show.
++        val component = Settings.Secure.getString(
++            contentResolver, SCREENSAVER_COMPONENTS
++        )
++        val status = resources.getString(
++            if (component.isNullOrEmpty()) R.string.screensaver_not_set
++            else R.string.screensaver_on
++        )
++
++        screensaverTwoLineButton.setSpan(
++            SpannableString(resources.getString(R.string.screensaver_status, status))
++        )
++
++        screensaverTwoLineButton.setOnClickListener {
++            startActivity(SCREENSAVER_SETTINGS)
++        }
++    }
++
++    private fun setAccessibilityButton() {
++        // Show whether anything is actually assisting, not just that the screen
++        // exists: "Accessibility / No services on" is the common case on a TV
++        // box and is worth being able to see at a glance.
++        val enabledServices = Settings.Secure.getString(
++            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
++        )
++        val status = when {
++            enabledServices.isNullOrEmpty() -> resources.getString(R.string.accessibility_none)
++            else -> resources.getQuantityString(
++                R.plurals.accessibility_services_on,
++                enabledServices.split(":").size,
++                enabledServices.split(":").size
++            )
++        }
++
++        accessibilityTwoLineButton.setSpan(
++            SpannableString(resources.getString(R.string.accessibility_status, status))
++        )
++
++        accessibilityTwoLineButton.setOnClickListener {
++            startActivity(ACCESSIBILITY_SETTINGS)
++        }
++    }
++
+     private fun setPanelShortcutButton() {
+         val enabled = sharedPreferences.panelShortcutEnabled
+         val statusSpan = SpannableString(
+@@ -392,6 +485,21 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+             )
+         }
+         val NOTIFICATION_SETTINGS: Intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
++        val ACCESSIBILITY_SETTINGS: Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
++
++        /** Not a public constant, and ACTION_DREAM_SETTINGS resolves to nothing on TV. */
++        const val SCREENSAVER_COMPONENTS = "screensaver_components"
++
++        /** DisplaySoundActivity advertises this action, so no explicit name needed. */
++        val SOUND_SETTINGS: Intent = Intent("com.android.settings.SOUND_SETTINGS")
++
++        /** Exported, but with no intent filter, so it needs the explicit name. */
++        val SCREENSAVER_SETTINGS: Intent = Intent().apply {
++            setClassName(
++                "com.android.tv.settings",
++                "com.android.tv.settings.device.display.daydream.DaydreamActivity"
++            )
++        }
+ 
+         val wifiIcons = intArrayOf(
+             R.drawable.ic_wifi_signal_0,
+diff --git a/app/src/main/res/layout/activity_system_options.xml b/app/src/main/res/layout/activity_system_options.xml
+index 03cb3dc..976042b 100644
+--- a/app/src/main/res/layout/activity_system_options.xml
++++ b/app/src/main/res/layout/activity_system_options.xml
+@@ -114,14 +114,59 @@
+ 
+             </LinearLayout>
+ 
+-            <org.lineageos.tv.launcher.view.TwoLineButton
+-                android:id="@+id/panelShortcutTwoLineButton"
+-                style="@style/TwoLineSystemOptionsButtonStyle"
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="6dp"
++                android:orientation="horizontal">
++
++                <org.lineageos.tv.launcher.view.TwoLineButton
++                    android:id="@+id/screensaverTwoLineButton"
++                    style="@style/TwoLineSystemOptionsButtonStyle"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_marginEnd="6dp"
++                    android:layout_weight="1"
++                    android:text="@string/screensaver_status"
++                    app:icon="@drawable/ic_screensaver" />
++
++                <org.lineageos.tv.launcher.view.TwoLineButton
++                    android:id="@+id/accessibilityTwoLineButton"
++                    style="@style/TwoLineSystemOptionsButtonStyle"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/accessibility_status"
++                    app:icon="@drawable/ic_accessibility" />
++
++            </LinearLayout>
++
++            <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="6dp"
+-                android:text="@string/panel_shortcut_status"
+-                app:icon="@drawable/ic_keyboard" />
++                android:orientation="horizontal">
++
++                <org.lineageos.tv.launcher.view.TwoLineButton
++                    android:id="@+id/audioOutputTwoLineButton"
++                    style="@style/TwoLineSystemOptionsButtonStyle"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_marginEnd="6dp"
++                    android:layout_weight="1"
++                    android:text="@string/audio_output_status"
++                    app:icon="@drawable/ic_audio_output" />
++
++                <org.lineageos.tv.launcher.view.TwoLineButton
++                    android:id="@+id/panelShortcutTwoLineButton"
++                    style="@style/TwoLineSystemOptionsButtonStyle"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1"
++                    android:text="@string/panel_shortcut_status"
++                    app:icon="@drawable/ic_keyboard" />
++
++            </LinearLayout>
+ 
+         </LinearLayout>
+ 
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index cd5d0bb..a0a607f 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -28,6 +28,21 @@
+     <string name="network_status">Network\n%1$s</string>
+     <string name="bluetooth_status">Accessories\n%1$s</string>
+     <string name="not_connected">Not connected</string>
++    <string name="audio_output_status">Audio output\n%1$s</string>
++    <string name="audio_output_hdmi">HDMI</string>
++    <string name="audio_output_bluetooth">Bluetooth</string>
++    <string name="audio_output_speaker">Speaker</string>
++    <string name="audio_output_headphones">Headphones</string>
++    <string name="audio_output_unknown">Unknown</string>
++    <string name="screensaver_status">Screensaver\n%1$s</string>
++    <string name="screensaver_not_set">Not set</string>
++    <string name="screensaver_on">Ready</string>
++    <plurals name="accessibility_services_on">
++        <item quantity="one">%1$d service on</item>
++        <item quantity="other">%1$d services on</item>
++    </plurals>
++    <string name="accessibility_status">Accessibility\n%1$s</string>
++    <string name="accessibility_none">No services on</string>
+     <string name="panel_shortcut_status">Panel shortcut\n%1$s</string>
+     <string name="enabled">Enabled</string>
+     <string name="disabled">Disabled</string>
+-- 
+2.43.0
+

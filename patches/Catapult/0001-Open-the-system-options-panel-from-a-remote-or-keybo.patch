@@ -1,7 +1,7 @@
 From 61162356a67b6a0b45d95562dd5ae9000c5346b2 Mon Sep 17 00:00:00 2001
 From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
 Date: Fri, 25 Sep 2026 16:22:38 -0500
-Subject: [PATCH] Open the system options panel from a remote or keyboard
+Subject: [PATCH 1/2] Open the system options panel from a remote or keyboard
  button
 
 The panel is currently reachable only by moving focus to the notification

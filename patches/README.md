@@ -47,6 +47,25 @@ It also introduced a regression: `updateView()` takes
 countdown only when that was 0, so a permanent extra row would have silently
 disabled autopair in no-input mode — the one case the screen exists for.
 
+## Catapult/0002 — screensaver, accessibility and audio output tiles
+
+Three tiles that report state rather than just linking to a settings screen,
+laid out two per row alongside the existing ones.
+
+- **Audio output** reads the live output from `AudioManager`, ordered by what
+  overrides what (A2DP / wired headphones > HDMI > built-in speaker). Opens
+  `DisplaySoundActivity` via `com.android.settings.SOUND_SETTINGS`.
+- **Screensaver** shows "Not set" when `screensaver_components` is empty —
+  which it is out of the box, while `screensaver_enabled` is already 1, so the
+  screensaver looks on and has nothing to show. Opens `DaydreamActivity` by
+  explicit name: it is exported but has no intent filter, and
+  `ACTION_DREAM_SETTINGS` resolves to nothing on TV.
+- **Accessibility** counts running services, because "no services on" is the
+  common case and worth seeing at a glance.
+
+**Status**: verified on `lineage_sdk_tv_x86_64`. All three render with live
+state and both new intents resolve and launch.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set
