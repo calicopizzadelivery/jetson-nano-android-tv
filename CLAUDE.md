@@ -94,8 +94,10 @@ docker/entrypoint.sh       git identity, ccache config
 docker-compose.yml         service, bind mounts, ulimits
 .env.example               copy to .env, fill in the three disk paths
 scripts/host-setup.sh      one-time root setup: docker, fstab mount, build dirs
-scripts/jetson-build       host driver: image/up/shell/sync/extract/build/status
-scripts/in-container/*.sh  sync, extract, build
+scripts/jetson-build       host driver: image/up/shell/sync/forks/extract/build
+scripts/in-container/*.sh  sync, extract, build, local-manifest, tree-local-changes
+scripts/in-container/local-manifest.xml   repo local manifest -> our four forks
+scripts/in-container/AmbientDream/        the screensaver, mirrored into vendor/
 scripts/probe.sh           read-only host probe → probe-output.txt
 .devcontainer/             VS Code attach config
 ```
@@ -370,6 +372,26 @@ Remaining:
    already-primed cache" and aborts on an empty one; `-p/--prime-cache` is
    what fills it. `extract.sh` now primes before extracting, but priming costs
    the ~20 GB download again, so it will only happen on the next `extract`.
+
+## Forks (2026-09-27)
+
+Four projects carry commits of ours and are now **synced from forks**, not
+patched: `device/nvidia/porg`, `packages/apps/TvSettings`,
+`packages/apps/Catapult`, `vendor/lineage` — all on branch
+`lineage-22.2-jetson-tv` under `calicopizzadelivery`.
+
+The mechanism is a repo **local manifest**, not submodules; submodules cannot
+work here because the source tree is populated by `repo`, not by this repo.
+Full reasoning, the three load-bearing details of the manifest, and the
+ordering constraint against roomservice are in **`docs/forks.md`** — read it
+before touching `local-manifest.sh` or running `repo sync` by hand.
+
+The one dangerous failure is silent: a plain `repo sync` on a tree without the
+local manifest puts those four back on LineageOS, and the build then produces
+an image missing our work with no error. `build.sh` runs
+`local-manifest.sh --check` to catch exactly that.
+
+`patches/` still exists, but only as changes formatted for posting upstream.
 
 ## Publishing
 
