@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     SPDX-FileCopyrightText: 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+
+     Installed into .repo/local_manifests/zz-jetson-tv.xml by
+     scripts/in-container/local-manifest.xml by scripts/in-container/local-manifest.sh.
+
+     The "zz-" prefix is load-bearing. repo reads local manifests in sorted
+     order, and remove-project only removes what has already been defined, so
+     this has to sort after roomservice.xml — which is where device/nvidia/porg
+     comes from.
+
+     remove-project is optional="true" on purpose: on a cold tree roomservice
+     has not run yet and porg is in no manifest, and without it repo aborts
+     with "remove-project element specifies non-existent project".
+
+     The github remote fetches from ".." relative to the manifest repo
+     (LineageOS/android.git), which resolves to https://github.com/ — so a fork
+     is just a different name on the same remote.
+-->
+<manifest>
+
+  <remove-project path="device/nvidia/porg" optional="true" />
+  <project path="device/nvidia/porg" remote="github"
+           name="calicopizzadelivery/android_device_nvidia_porg"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
+  <remove-project path="packages/apps/TvSettings" optional="true" />
+  <project path="packages/apps/TvSettings" remote="github"
+           name="calicopizzadelivery/android_packages_apps_TvSettings"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
+  <remove-project path="packages/apps/Catapult" optional="true" />
+  <project path="packages/apps/Catapult" remote="github"
+           name="calicopizzadelivery/android_packages_apps_Catapult"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
+  <remove-project path="vendor/lineage" optional="true" />
+  <project path="vendor/lineage" remote="github"
+           name="calicopizzadelivery/android_vendor_lineage"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
+</manifest>

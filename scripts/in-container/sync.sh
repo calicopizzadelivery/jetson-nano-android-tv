@@ -27,4 +27,10 @@ fi
 echo "==> repo sync (first run pulls a few hundred GB; go and do something else)"
 repo sync
 
+# A plain `repo sync` re-reads the manifest, which on a tree that already has
+# the local manifest is a no-op — but on one that does not, it is what silently
+# puts these projects back on LineageOS. Re-apply rather than assume.
+echo "==> re-applying the forked projects"
+bash /opt/jetson-tv/local-manifest.sh
+
 echo "==> done. Next: ./scripts/jetson-build extract"

@@ -33,6 +33,12 @@ if ! breakfast "$DEVICE"; then
     echo "    first breakfast failed as expected; continuing to blob extraction"
 fi
 
+# roomservice has now run, so device/nvidia/porg exists to be overridden. This
+# has to come before extraction: extract-files.sh reads device/nvidia/porg, and
+# on our fork that tree already carries the screensaver commits.
+echo "==> pointing the forked projects at our forks"
+bash /opt/jetson-tv/local-manifest.sh
+
 echo "==> applying local tree changes"
 SRC="$SRC" bash /opt/jetson-tv/tree-local-changes.sh
 

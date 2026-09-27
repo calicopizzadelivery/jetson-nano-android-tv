@@ -8,6 +8,7 @@
 #   ./scripts/jetson-build shell     interactive shell inside it
 #   ./scripts/jetson-build doctor    verify the environment is usable
 #   ./scripts/jetson-build sync      repo init (first time) + repo sync
+#   ./scripts/jetson-build forks     point our four projects at our forks
 #   ./scripts/jetson-build extract   breakfast + pull NVIDIA blobs
 #   ./scripts/jetson-build build     brunch the device
 #   ./scripts/jetson-build all       sync -> extract -> build
@@ -107,6 +108,10 @@ case "$cmd" in
         preflight; ensure_up
         dc exec lineage /opt/jetson-tv/sync.sh "$@"
         ;;
+    forks)
+        preflight; ensure_up
+        dc exec lineage /opt/jetson-tv/local-manifest.sh "$@"
+        ;;
     extract)
         preflight; ensure_up
         dc exec lineage /opt/jetson-tv/extract.sh "$@"
@@ -140,7 +145,7 @@ case "$cmd" in
         printf '\n'
         ;;
     help|--help|-h)
-        sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         ;;
     *)
         die "unknown command: $cmd  (try: help)"

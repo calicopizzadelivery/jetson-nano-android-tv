@@ -23,6 +23,9 @@ cd "$SRC"
     exit 1
 }
 
+echo "==> checking the forked projects are still in the tree"
+bash /opt/jetson-tv/local-manifest.sh --check
+
 echo "==> applying local tree changes"
 SRC="$SRC" bash /opt/jetson-tv/tree-local-changes.sh
 

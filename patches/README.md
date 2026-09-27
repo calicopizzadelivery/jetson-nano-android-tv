@@ -3,9 +3,14 @@
 Changes we intend to send to LineageOS, kept as `git format-patch` output so
 they stay rebaseable and can be posted to Gerrit unmodified.
 
-These are **not** applied by `tree-local-changes.sh`. That script carries local
-configuration we need for this board; this directory carries changes that
-should stop being ours as soon as they land upstream.
+These are **not** applied by `tree-local-changes.sh`, and as of the fork
+migration they are **not how the code gets into the build** either — see
+`docs/forks.md`. The four projects these patch are synced from our own forks by
+`scripts/in-container/local-manifest.sh`, so the tree already has the commits.
+
+What this directory is for is the other half of the job: changes formatted for
+posting upstream. `git format-patch` against the fork branch is what
+regenerates them, and the drift between the two is checked by hand.
 
 ## Applying
 
