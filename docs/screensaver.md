@@ -125,6 +125,36 @@ Two numbers are easy to confuse. `screen_off_timeout` is how long the box
 waits before the dream *starts*; `DWELL_MS` is how long each photograph stays
 up *once it is running*. They are unrelated.
 
+### The weather icon
+
+Ten vector drawables in `res/drawable/ic_wx_*.xml`, chosen by `Weather.iconFor`
+from the same WMO grouping `describe()` uses, so the picture and the words can
+never disagree. Showers reuse the rain icon and snow showers the snow one — at
+30dp the distinction is not legible and the word beside it already carries it.
+
+The query asks for **`is_day`** as well as `temperature_2m` and `weather_code`.
+It costs nothing and picks the moon variants for clear and partly-cloudy: a sun
+over a city at three in the morning is the kind of wrong a screensaver running
+all night would show for hours.
+
+Two of the ten are composed rather than drawn — `partly_day` and
+`partly_night` place the same sun, moon and cloud paths with group transforms.
+**A group's scale scales its stroke too**, so each strokeWidth inside a scaled
+group is 1.7 divided by that scale; without that the set stops looking like one
+weight. The sun and cloud are positioned clear of each other rather than
+overlapping, because the clouds are stroked with no fill and an overlapping sun
+would show straight through.
+
+### The credit block
+
+The credit is two lines: the photo title, then the center and licence centred
+beneath it. It was one line, which grew rightwards into the weather as titles
+got longer — and at 2x density the 800dp cap was 1600px of a 1920px frame, so
+the cap was not protecting anything. Stacking keeps the block roughly
+title-width whatever the title is, and reads as a caption rather than a
+sentence. Items with no `center` get "public domain" alone rather than a
+separator hanging off nothing.
+
 ### Weather location
 
 `AmbientSettingsActivity` is a leanback `GuidedStepSupportFragment` — the same

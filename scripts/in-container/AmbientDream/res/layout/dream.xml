@@ -56,39 +56,90 @@
             android:textColor="#FFFFFF"
             android:textSize="104sp" />
 
-        <TextView
-            android:id="@+id/weather"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="end"
             android:layout_marginTop="6dp"
-            android:fontFamily="sans-serif-medium"
-            android:shadowColor="#B3000000"
-            android:shadowDx="0"
-            android:shadowDy="1"
-            android:shadowRadius="10"
-            android:textColor="#E8EEF3"
-            android:textSize="22sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Hidden until there is a reading, so an unknown WMO code leaves
+                 the line looking deliberate rather than leaving a gap. -->
+            <ImageView
+                android:id="@+id/weatherIcon"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_marginEnd="10dp"
+                android:contentDescription="@null"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/weather"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="10"
+                android:textColor="#E8EEF3"
+                android:textSize="22sp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
     <!-- NASA imagery is public domain so this is courtesy, not obligation.
-         Kept away from the clock so it never competes with it. -->
-    <TextView
-        android:id="@+id/credit"
+         Kept away from the clock so it never competes with it.
+
+         Two lines rather than one: the title alone can be long, and as a single
+         run it grew rightwards into the weather. Stacking the attribution under
+         it and centring it keeps the block roughly title-width however long the
+         title is, and reads as a caption rather than a sentence. -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
         android:layout_marginStart="72dp"
         android:layout_marginBottom="56dp"
         android:alpha="0.75"
-        android:maxWidth="800dp"
-        android:maxLines="2"
-        android:ellipsize="end"
-        android:shadowColor="#B3000000"
-        android:shadowDx="0"
-        android:shadowDy="1"
-        android:shadowRadius="10"
-        android:textColor="#C7D4DE"
-        android:textSize="15sp" />
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/credit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:ellipsize="end"
+            android:gravity="center_horizontal"
+            android:maxLines="2"
+            android:maxWidth="460dp"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="10"
+            android:textColor="#C7D4DE"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/creditAttribution"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:gravity="center_horizontal"
+            android:maxLines="1"
+            android:maxWidth="460dp"
+            android:shadowColor="#B3000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="10"
+            android:textColor="#C7D4DE"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
 </FrameLayout>

@@ -32,14 +32,20 @@ final class Weather {
             "https://geocoding-api.open-meteo.com/v1/search?count=1&name=";
     private static final String BY_IP =
             "https://ipwho.is/?fields=success,city,latitude,longitude";
+    // is_day comes back as 0 or 1 and costs nothing extra. A sun over a city
+    // at three in the morning is the sort of wrong that a screensaver running
+    // all night would show for hours.
     private static final String FORECAST =
-            "https://api.open-meteo.com/v1/forecast?current=temperature_2m,weather_code";
+            "https://api.open-meteo.com/v1/forecast?current=temperature_2m,weather_code,is_day";
 
     static final class Conditions {
         final String text;
+        /** A drawable to show beside the text, or 0 when the code is unknown. */
+        final int icon;
 
-        Conditions(String text) {
+        Conditions(String text, int icon) {
             this.text = text;
+            this.icon = icon;
         }
     }
 
@@ -69,8 +75,10 @@ final class Weather {
             final JSONObject current = new JSONObject(NasaFeed.getString(url))
                     .getJSONObject("current");
 
+            final int code = current.optInt("weather_code", -1);
+            final boolean day = current.optInt("is_day", 1) == 1;
             final long degrees = Math.round(current.optDouble("temperature_2m", Double.NaN));
-            final String described = describe(current.optInt("weather_code", -1));
+            final String described = describe(code);
 
             final StringBuilder sb = new StringBuilder();
             sb.append(degrees).append('°');
@@ -80,7 +88,7 @@ final class Weather {
             if (!city.isEmpty()) {
                 sb.append("  ·  ").append(city);
             }
-            return new Conditions(sb.toString());
+            return new Conditions(sb.toString(), iconFor(code, day));
         } catch (Exception e) {
             Log.i(TAG, "weather unavailable: " + e);
             return null;
@@ -164,6 +172,27 @@ final class Weather {
                 .putString(PREF_LON, lon)
                 .putString(PREF_CITY, city)
                 .apply();
+    }
+
+    /**
+     * The same grouping as {@link #describe}, so the icon and the words can
+     * never disagree. Showers reuse the rain icon and snow showers the snow
+     * one: at this size the distinction is not legible, and the word beside it
+     * already carries it.
+     */
+    private static int iconFor(int code, boolean day) {
+        if (code == 0) return day ? R.drawable.ic_wx_clear_day : R.drawable.ic_wx_clear_night;
+        if (code == 1 || code == 2) return day ? R.drawable.ic_wx_partly_day
+                                               : R.drawable.ic_wx_partly_night;
+        if (code == 3) return R.drawable.ic_wx_cloudy;
+        if (code == 45 || code == 48) return R.drawable.ic_wx_fog;
+        if (code >= 51 && code <= 57) return R.drawable.ic_wx_drizzle;
+        if (code >= 61 && code <= 67) return R.drawable.ic_wx_rain;
+        if (code >= 71 && code <= 77) return R.drawable.ic_wx_snow;
+        if (code >= 80 && code <= 82) return R.drawable.ic_wx_rain;
+        if (code == 85 || code == 86) return R.drawable.ic_wx_snow;
+        if (code >= 95) return R.drawable.ic_wx_thunder;
+        return 0;
     }
 
     /** WMO weather interpretation codes, grouped to what fits on a TV. */

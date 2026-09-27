@@ -13,6 +13,7 @@ import android.os.Looper;
 import android.service.dreams.DreamService;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
 
@@ -53,7 +54,9 @@ public class AmbientDreamService extends DreamService {
     private ImageView mFront;
     private ImageView mBack;
     private TextView mCredit;
+    private TextView mCreditAttribution;
     private TextView mWeather;
+    private ImageView mWeatherIcon;
 
     private int mIndex;
     private boolean mRunning;
@@ -72,7 +75,9 @@ public class AmbientDreamService extends DreamService {
         mFront = findViewById(R.id.imageA);
         mBack = findViewById(R.id.imageB);
         mCredit = findViewById(R.id.credit);
+        mCreditAttribution = findViewById(R.id.creditAttribution);
         mWeather = findViewById(R.id.weather);
+        mWeatherIcon = findViewById(R.id.weatherIcon);
     }
 
     @Override
@@ -116,6 +121,7 @@ public class AmbientDreamService extends DreamService {
             mHandler.post(() -> {
                 if (cached.length > 0) {
                     mCredit.setText(R.string.credit_offline);
+                    mCreditAttribution.setVisibility(View.GONE);
                 }
             });
         }
@@ -139,8 +145,13 @@ public class AmbientDreamService extends DreamService {
             mHandler.post(() -> {
                 crossfadeTo(bitmap);
                 if (photo != null && !TextUtils.isEmpty(photo.title)) {
-                    mCredit.setText(getString(R.string.credit_format,
-                            photo.title, photo.center));
+                    mCredit.setText(photo.title);
+                    // Not every item names a center, and "· public domain"
+                    // hanging off nothing reads as a bug.
+                    mCreditAttribution.setText(TextUtils.isEmpty(photo.center)
+                            ? getString(R.string.credit_attribution_nocenter)
+                            : getString(R.string.credit_attribution, photo.center));
+                    mCreditAttribution.setVisibility(View.VISIBLE);
                 }
                 mHandler.postDelayed(this::showNext, DWELL_MS);
             });
@@ -229,6 +240,12 @@ public class AmbientDreamService extends DreamService {
             mHandler.post(() -> {
                 if (conditions != null) {
                     mWeather.setText(conditions.text);
+                    if (conditions.icon != 0) {
+                        mWeatherIcon.setImageResource(conditions.icon);
+                        mWeatherIcon.setVisibility(View.VISIBLE);
+                    } else {
+                        mWeatherIcon.setVisibility(View.GONE);
+                    }
                 }
                 mHandler.postDelayed(this::refreshWeather, WEATHER_MS);
             });

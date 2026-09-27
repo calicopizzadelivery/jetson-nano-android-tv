@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+
+     Composed rather than drawn: the same sun, moon and cloud paths as the
+     single-element icons, placed with group transforms. Group scale scales the
+     stroke too, so each strokeWidth below is 1.7 divided by that group%27s scale,
+     which is what keeps every icon in the set looking like one weight.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.45"
+        android:scaleY="0.45"
+        android:translateX="1.5"
+        android:translateY="0.5">
+        <path
+            android:fillColor="#E8EEF3"
+            android:pathData="M21,12.79A9,9 0 1,1 11.21,3A7,7 0 0,0 21,12.79z" />
+    </group>
+
+    <group
+        android:scaleX="0.7"
+        android:scaleY="0.7"
+        android:translateX="7"
+        android:translateY="8.4">
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#E8EEF3"
+            android:strokeWidth="2.43"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M18,10h-1.26A8,8 0 1,0 9,20h9a5,5 0 0,0 0,-10z" />
+    </group>
+</vector>
