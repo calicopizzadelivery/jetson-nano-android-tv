@@ -400,6 +400,24 @@ an image missing our work with no error. `build.sh` runs
 
 `patches/` still exists, but only as changes formatted for posting upstream.
 
+## Testing Bluetooth without hardware (2026-09-28)
+
+The emulator can host a **virtual Bluetooth A2DP speaker**, so audio routing is
+testable with the bench powered down. netsim and Rootcanal already run under
+every emulator, and Bumble (vendored at `external/python/bumble`) attaches to
+them as a second device.
+
+    ./scripts/emulator-bt-speaker.sh
+
+**`docs/emulator-bluetooth.md`** has the whole thing, including the five traps
+that cost a cycle each. The one worth knowing before touching any priv-app:
+**`adb install -r` shadows the image copy with a `/data` update that keeps its
+own manifest**, so permission changes look like they are being ignored no matter
+how often you rebuild. `pm uninstall-system-updates <pkg>` reverts it.
+
+Not yet tried: the same rig with a virtual BLE remote, which would answer the
+open "does BLE pairing work on ARM64 Tegra" question above without a radio.
+
 ## Publishing
 
 **Published**: https://github.com/calicopizzadelivery/jetson-nano-android-tv

@@ -1,55 +1,58 @@
-From eb60bff91c4d32f269f7909bc27d0c77a0a20a64 Mon Sep 17 00:00:00 2001
+From f350fd1c8cd677cc1dca74c64792758a3db14dbc Mon Sep 17 00:00:00 2001
 From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
 Date: Mon, 28 Sep 2026 08:41:06 -0500
 Subject: [PATCH] Audio output tile: pick the output, not just report it
 
 The tile reported which output was live and then opened Sound settings,
 which on this build has nothing to do with choosing an output device. Make
-it a picker: the built-in output and every connected Bluetooth sink.
+it a picker: the built-in output and every bonded Bluetooth sink.
 
 Switching output is activating or deactivating a Bluetooth sink, because
 A2DP outranks HDMI in the platform's routing policy -- "use HDMI" means
 "have no active Bluetooth audio device". So this is BluetoothAdapter
-setActiveDevice/removeActiveDevice with ACTIVE_DEVICE_AUDIO, the same pair
-TvSettings already uses from AccessoryUtils.
+removeActiveDevice/setActiveDevice with ACTIVE_DEVICE_AUDIO, the same pair
+TvSettings uses from AccessoryUtils.
+
+Three things this needs that are not obvious:
+
+- All of BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED and MODIFY_PHONE_STATE.
+  The framework declares them with @RequiresPermission(allOf = ...), and
+  missing one fails at the binder with a SecurityException, not at build
+  time.
+
+- The list is bonded devices, not connected ones. Deactivating a sink also
+  drops its profile connection, so a connected-only list empties the moment
+  you switch to HDMI and you can never switch back.
+
+- A bonded sink that is not connected cannot be made active, so selecting
+  one connects it and lets the stack make it active. BluetoothA2dp.connect
+  is @hide and Bluetooth is a mainline module, so it is absent from the
+  stubs even for a platform app; BluetoothDevice.connect is the @SystemApi
+  equivalent and wants the same three permissions.
 
 Reading state stays on public API: AudioManager.getDevices plus
-AudioDeviceInfo.getAddress to match the routed sink. Only the switch needs
-BLUETOOTH_PRIVILEGED, so a build where that is refused still shows the
-right thing rather than showing nothing.
-
-AudioManager only lists a Bluetooth sink while it is the active route, so
-it cannot enumerate connected-but-idle devices. The A2DP profile proxy
-can, which is why one is bound for the life of the activity. An
-AudioDeviceCallback repaints the tile, since routing is asynchronous and a
-sink can also come and go on its own.
+AudioDeviceInfo.getAddress to match the routed sink. An AudioDeviceCallback
+repaints the tile, since routing is asynchronous.
 
 With one output there is no choice to make, so the tile opens accessory
 settings instead of showing a list of one.
 
-BLUETOOTH_PRIVILEGED goes in the privapp allowlist and BLUETOOTH_CONNECT
-in the default-permission grants; both are confirmed granted at runtime.
-
-The dialog is pinned to the panel's edge rather than centred, so it reads
-as part of the pop-over instead of a separate surface.
-
-Test: lineage_sdk_tv_x86_64. Tile reports Speaker (no HDMI on the
-emulator), clicking with one output opens accessory settings, both
-permissions show granted in dumpsys, no crash. The multi-device list and
-the switch itself are NOT verified -- neither the emulator nor the bench
-has a Bluetooth audio sink. The dialog layout was checked with a
-temporary stub, since removed.
+Test: lineage_sdk_tv_x86_64 against a virtual A2DP sink (Bumble over
+netsim). Round trip verified in both directions -- speaker to Bluetooth
+connects the profile and routes audio, Bluetooth to speaker clears the
+active device and routes back -- with the tile repainting itself each way,
+and ~495 KB of SBC over RTP confirmed arriving at the sink.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
-Change-Id: I1971d0ff06c50f661066200bfadb848c5044cd28
+Change-Id: I875379b7b2b3d950ba5bf749c8506e26131b1c66
 ---
  ..._permissions_org.lineageos.tv.launcher.xml |   1 +
- ...pp_whitelist_org.lineageos.tv.launcher.xml |   1 +
- app/src/main/AndroidManifest.xml              |   3 +
- .../tv/launcher/SystemOptionsActivity.kt      | 200 +++++++++++++++++-
+ ...pp_whitelist_org.lineageos.tv.launcher.xml |   2 +
+ app/src/main/AndroidManifest.xml              |   7 +
+ .../tv/launcher/SystemOptionsActivity.kt      | 233 +++++++++++++++++-
  app/src/main/res/values/dimens.xml            |   2 +
  app/src/main/res/values/strings.xml           |   1 +
- 6 files changed, 197 insertions(+), 11 deletions(-)
+ 6 files changed, 235 insertions(+), 11 deletions(-)
 
 diff --git a/app/default_permissions_org.lineageos.tv.launcher.xml b/app/default_permissions_org.lineageos.tv.launcher.xml
 index b39bd18..edafdfb 100644
@@ -64,22 +67,25 @@ index b39bd18..edafdfb 100644
      </exception>
  </exceptions>
 diff --git a/app/privapp_whitelist_org.lineageos.tv.launcher.xml b/app/privapp_whitelist_org.lineageos.tv.launcher.xml
-index b518fcc..f59f103 100644
+index b518fcc..9010831 100644
 --- a/app/privapp_whitelist_org.lineageos.tv.launcher.xml
 +++ b/app/privapp_whitelist_org.lineageos.tv.launcher.xml
-@@ -5,6 +5,7 @@
+@@ -5,8 +5,10 @@
  -->
  <permissions>
      <privapp-permissions package="org.lineageos.tv.launcher">
 +        <permission name="android.permission.BLUETOOTH_PRIVILEGED" />
          <permission name="android.permission.DEVICE_POWER" />
          <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
++        <permission name="android.permission.MODIFY_PHONE_STATE" />
          <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+     </privapp-permissions>
+ </permissions>
 diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
-index f810797..f73022e 100644
+index f810797..8c32f39 100644
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -30,11 +30,14 @@
+@@ -30,11 +30,18 @@
      <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
      <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
      <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -89,30 +95,36 @@ index f810797..f73022e 100644
      <uses-permission android:name="android.permission.DEVICE_POWER" />
      <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
      <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
-+    <!-- setActiveDevice/removeActiveDevice, to pick the audio output -->
++    <!-- setActiveDevice/removeActiveDevice, to pick the audio output. The
++         framework requires all three: BLUETOOTH_CONNECT, BLUETOOTH_PRIVILEGED
++         and MODIFY_PHONE_STATE. Missing the last one fails at the binder with
++         a SecurityException, not at build time. -->
 +    <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
++    <uses-permission android:name="android.permission.MODIFY_PHONE_STATE" />
  
      <queries>
          <intent>
 diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
-index 7c61acb..364ec08 100644
+index 7c61acb..2d7af6f 100644
 --- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
 +++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
-@@ -7,8 +7,13 @@ package org.lineageos.tv.launcher
+@@ -7,8 +7,15 @@ package org.lineageos.tv.launcher
  
  import android.app.ActivityOptions
  import android.app.PendingIntent
 +import android.bluetooth.BluetoothAdapter
++import android.bluetooth.BluetoothClass
 +import android.bluetooth.BluetoothDevice
  import android.bluetooth.BluetoothManager
 +import android.bluetooth.BluetoothProfile
++import android.bluetooth.BluetoothStatusCodes
 +import android.bluetooth.BluetoothA2dp
  import android.media.AudioDeviceInfo
 +import android.media.AudioDeviceCallback
  import android.media.AudioManager
  import android.content.Intent
  import android.icu.text.DateFormat
-@@ -26,12 +31,15 @@ import android.provider.Settings
+@@ -26,12 +33,15 @@ import android.provider.Settings
  import android.service.notification.StatusBarNotification
  import android.text.SpannableString
  import android.util.Log
@@ -128,7 +140,7 @@ index 7c61acb..364ec08 100644
  import androidx.appcompat.content.res.AppCompatResources
  import androidx.leanback.widget.VerticalGridView
  import androidx.lifecycle.Lifecycle
-@@ -79,6 +87,42 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -79,6 +89,42 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
  
      private val sharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this)!! }
  
@@ -171,7 +183,7 @@ index 7c61acb..364ec08 100644
      override fun onCreate(savedInstanceState: Bundle?) {
          super.onCreate(savedInstanceState)
  
-@@ -109,6 +153,11 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -109,6 +155,11 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
          setScreensaverButton()
          setAudioOutputButton()
  
@@ -183,7 +195,7 @@ index 7c61acb..364ec08 100644
          settingsButton.setOnClickListener {
              startActivity(SETTINGS)
          }
-@@ -237,6 +286,14 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -237,6 +288,14 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
          if (NotificationUtils.notificationPermissionGranted(this)) {
              notificationViewModel.unbindService(this)
          }
@@ -198,7 +210,7 @@ index 7c61acb..364ec08 100644
      }
  
      private fun setNetworkButton(
-@@ -282,21 +339,31 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -282,21 +341,31 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
          networkTwoLineButton.setSpan(networkSpan)
      }
  
@@ -238,18 +250,38 @@ index 7c61acb..364ec08 100644
                  types.contains(AudioDeviceInfo.TYPE_WIRED_HEADPHONES) ||
                          types.contains(AudioDeviceInfo.TYPE_WIRED_HEADSET) ->
                      R.string.audio_output_headphones
-@@ -313,13 +380,122 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -313,13 +382,153 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
              }
          )
  
-+        // getDevices() lists a Bluetooth sink only while it is the active
-+        // route, so it cannot enumerate the connected-but-idle ones. The A2DP
-+        // profile proxy can.
-+        val sinks = a2dp?.connectedDevices.orEmpty().map {
-+            AudioOutput(bluetoothLabel(it), it)
-+        }
++        // Bonded rather than connected. getDevices() lists a sink only while
++        // it is the active route; a2dp.connectedDevices adds the idle-but-
++        // connected ones — but deactivating a sink also drops its profile
++        // connection, so a "connected" list empties the moment you switch to
++        // HDMI and you can never switch back. Everything bonded that can play
++        // audio is the set a user means by "my speakers".
++        val sinks = getSystemService(BluetoothManager::class.java)?.adapter
++            ?.bondedDevices.orEmpty()
++            .filter { isAudioSink(it) }
++            .map { AudioOutput(bluetoothLabel(it), it) }
 +
 +        return listOf(AudioOutput(builtIn, null)) + sinks
++    }
++
++    /**
++     * A2DP support is the thing that matters, but reading the UUID list needs
++     * the device to have been queried. The class of device is always there and
++     * is what the accessory UI uses, so go by that and let a false positive be
++     * a row that simply does not work rather than a speaker that never appears.
++     */
++    private fun isAudioSink(device: BluetoothDevice) = try {
++        device.bluetoothClass?.let {
++            it.hasService(BluetoothClass.Service.AUDIO) ||
++                    it.majorDeviceClass == BluetoothClass.Device.Major.AUDIO_VIDEO
++        } == true
++    } catch (e: SecurityException) {
++        Log.w(LOG_TAG, "no permission to read a bonded device's class", e)
++        false
 +    }
 +
 +    private fun bluetoothLabel(device: BluetoothDevice) = try {
@@ -308,7 +340,7 @@ index 7c61acb..364ec08 100644
 +        if (outputs.size < 2) {
 +            startActivity(BLUETOOTH_SETTINGS)
 +            return
-+        }
+         }
 +
 +        val labels = outputs.map { it.label }.toTypedArray()
 +        val dialog = AlertDialog.Builder(this)
@@ -348,13 +380,24 @@ index 7c61acb..364ec08 100644
 +        }
 +
 +        val switched = try {
-+            output.device?.let {
-+                adapter.setActiveDevice(it, BluetoothAdapter.ACTIVE_DEVICE_AUDIO)
++            output.device?.let { device ->
++                // A sink that is bonded but not connected cannot be made
++                // active. Connecting it is enough: the stack makes a freshly
++                // connected A2DP device the active one.
++                if (a2dp?.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED) {
++                    adapter.setActiveDevice(device, BluetoothAdapter.ACTIVE_DEVICE_AUDIO)
++                } else {
++                    // BluetoothA2dp.connect is @hide and Bluetooth is a
++                    // mainline module, so it is not in the stubs even for a
++                    // platform app. BluetoothDevice.connect is the @SystemApi
++                    // equivalent, and wants the same three permissions.
++                    device.connect() == BluetoothStatusCodes.SUCCESS
++                }
 +            } ?: adapter.removeActiveDevice(BluetoothAdapter.ACTIVE_DEVICE_AUDIO)
 +        } catch (e: SecurityException) {
 +            Log.e(LOG_TAG, "not allowed to change the active audio device", e)
 +            false
-         }
++        }
 +
 +        if (!switched) {
 +            Log.w(LOG_TAG, "refused to switch audio output to ${output.label}")
@@ -364,7 +407,7 @@ index 7c61acb..364ec08 100644
      }
  
      private fun setScreensaverButton() {
-@@ -495,6 +671,8 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+@@ -495,6 +704,8 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
      }
  
      companion object {

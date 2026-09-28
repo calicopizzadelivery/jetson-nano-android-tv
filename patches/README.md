@@ -204,13 +204,24 @@ a build where that is refused still reports correctly. The A2DP profile proxy
 is bound because `AudioManager` lists a Bluetooth sink only while it is the
 *active* route and so cannot enumerate connected-but-idle ones.
 
-**Status**: partly verified on `lineage_sdk_tv_x86_64`. Confirmed: the tile
-reports the built-in output, `BLUETOOTH_PRIVILEGED` and `BLUETOOTH_CONNECT` are
-both granted at runtime, the one-output case opens accessory settings instead
-of a single-item list, and nothing crashes. **Not confirmed**: the multi-device
-list and the switch itself — neither the emulator nor the bench has a Bluetooth
-audio sink. The dialog layout was checked with a temporary stub, since removed.
-Do not send this upstream until it has driven a real speaker.
+The list is **bonded** devices, not connected ones: deactivating a sink also
+drops its profile connection, so a connected-only list empties the moment you
+switch to HDMI and you can never switch back. Selecting a bonded-but-
+disconnected sink connects it — `BluetoothA2dp.connect` is `@hide` and Bluetooth
+is a mainline module, so it is absent from the stubs even for a platform app;
+`BluetoothDevice.connect` is the `@SystemApi` equivalent.
+
+It needs **all three** of `BLUETOOTH_CONNECT`, `BLUETOOTH_PRIVILEGED` and
+`MODIFY_PHONE_STATE`. The framework declares them `allOf`, and a missing one
+fails at the binder with a `SecurityException` rather than at build time.
+
+**Status**: verified on `lineage_sdk_tv_x86_64` against a virtual A2DP sink —
+see `docs/emulator-bluetooth.md`, which explains how to attach one. Round trip
+confirmed both ways: speaker → Bluetooth connects the profile and routes audio,
+Bluetooth → speaker clears the active device and routes back, with the tile
+repainting itself each way and ~495 KB of SBC over RTP arriving at the sink.
+Still unproven on real hardware, where a physical speaker may behave differently
+on reconnect.
 
 ## vendor_lineage/0001 — unblock the TV SDK products
 
