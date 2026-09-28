@@ -1,0 +1,242 @@
+From c03c63543028d7dee111bfc2addfb3a9fd88a4ef Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Mon, 28 Sep 2026 15:07:11 -0500
+Subject: [PATCH] Accessibility tile: toggle the features, not count services
+
+The tile counted enabled accessibility services and opened the settings
+screen. On a stock LineageOS TV build that count is always zero -- no
+accessibility service is installed at all, TalkBack being a Google app --
+so the tile could only ever read "No services on".
+
+What the platform does have here is switches, and the Accessibility screen
+in TvSettings exposes five of them. The tile now toggles those directly:
+bold text, high contrast text, colour correction, captions and audio
+description. All are Settings.Secure writes, covered by the
+WRITE_SECURE_SETTINGS this package already holds, and all take effect
+immediately. A "More settings" button still reaches the full screen for
+font scale, text-to-speech and any sideloaded service, and an enabled
+service still counts towards the summary.
+
+Two things worth knowing:
+
+- Bold text is not 0/1. FONT_WEIGHT_ADJUSTMENT carries a weight delta, and
+  TvSettings uses 300, so the toggle stores a pair of values rather than a
+  boolean.
+
+- Toggling it raises CONFIG_FONT_WEIGHT_ADJUSTMENT, which recreated the
+  activity and took the open dialog with it -- the first toggle worked and
+  the dialog vanished. SystemOptionsActivity now declares
+  configChanges="fontWeightAdjustment". The panel is transient, so keeping
+  it alive beats re-laying it out.
+
+Note the constant names do not match the setting keys:
+ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED is "high_text_contrast_enabled",
+and ENABLED_ACCESSIBILITY_AUDIO_DESCRIPTION_BY_DEFAULT is
+"enabled_accessibility_audio_description_by_default".
+
+Test: lineage_sdk_tv_x86_64. All five write their setting and apply live --
+the panel itself renders bold and high-contrast once those are on -- the
+dialog survives the bold-text toggle, and the tile summary updates on
+dismiss.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ib1afee8f5569dabfbd6375103ae3f31226585b2a
+---
+ app/src/main/AndroidManifest.xml              |   5 +
+ .../tv/launcher/SystemOptionsActivity.kt      | 118 +++++++++++++++---
+ app/src/main/res/values/strings.xml           |  15 ++-
+ 3 files changed, 120 insertions(+), 18 deletions(-)
+
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 8c32f39..3bb8fa7 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -83,8 +83,13 @@
+             android:name=".ModifyChannelsActivity"
+             android:theme="@style/Theme.Catapult.SideActivity" />
+ 
++        <!-- configChanges: toggling bold text from the accessibility tile raises
++             CONFIG_FONT_WEIGHT_ADJUSTMENT, which would otherwise recreate this
++             activity and take any open dialog with it. The panel is transient,
++             so keeping it alive beats re-laying it out. -->
+         <activity
+             android:name=".SystemOptionsActivity"
++            android:configChanges="fontWeightAdjustment"
+             android:theme="@style/Theme.Catapult.SideActivity"
+             android:exported="true"
+             android:launchMode="singleInstance">
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+index 2d7af6f..baf0588 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+@@ -571,28 +571,115 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         }
+     }
+ 
++    /**
++     * An accessibility switch the platform actually has on this build.
++     *
++     * [on] and [off] are the two values rather than a boolean, because bold
++     * text is not 0/1: FONT_WEIGHT_ADJUSTMENT carries the weight delta, and
++     * TvSettings uses 300 for bold.
++     */
++    private data class AccessibilityToggle(
++        val labelRes: Int,
++        val setting: String,
++        val on: Int = 1,
++        val off: Int = 0,
++    )
++
++    /**
++     * Deliberately not a list of accessibility *services*: a stock LineageOS TV
++     * build installs none at all — TalkBack is a Google app — so a service list
++     * is always empty and the old "No services on" summary could never say
++     * anything else. These five are what the Accessibility screen in TvSettings
++     * actually offers as switches, and they all work here.
++     */
++    private val accessibilityToggles = listOf(
++        AccessibilityToggle(
++            R.string.accessibility_bold_text,
++            Settings.Secure.FONT_WEIGHT_ADJUSTMENT,
++            on = BOLD_TEXT_ADJUSTMENT,
++        ),
++        AccessibilityToggle(
++            R.string.accessibility_high_contrast_text,
++            Settings.Secure.ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED,
++        ),
++        AccessibilityToggle(
++            R.string.accessibility_color_correction,
++            Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED,
++        ),
++        AccessibilityToggle(
++            R.string.accessibility_captions,
++            Settings.Secure.ACCESSIBILITY_CAPTIONING_ENABLED,
++        ),
++        AccessibilityToggle(
++            R.string.accessibility_audio_description,
++            Settings.Secure.ENABLED_ACCESSIBILITY_AUDIO_DESCRIPTION_BY_DEFAULT,
++        ),
++    )
++
++    private fun isToggleOn(toggle: AccessibilityToggle) =
++        Settings.Secure.getInt(contentResolver, toggle.setting, toggle.off) == toggle.on
++
+     private fun setAccessibilityButton() {
+-        // Show whether anything is actually assisting, not just that the screen
+-        // exists: "Accessibility / No services on" is the common case on a TV
+-        // box and is worth being able to see at a glance.
+-        val enabledServices = Settings.Secure.getString(
++        // Count what is actually assisting. An enabled service still counts,
++        // for the case where one has been sideloaded, even though none of the
++        // toggles below is a service.
++        val services = Settings.Secure.getString(
+             contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+-        )
+-        val status = when {
+-            enabledServices.isNullOrEmpty() -> resources.getString(R.string.accessibility_none)
+-            else -> resources.getQuantityString(
+-                R.plurals.accessibility_services_on,
+-                enabledServices.split(":").size,
+-                enabledServices.split(":").size
+-            )
++        )?.split(":")?.filter { it.isNotEmpty() }.orEmpty()
++        val count = accessibilityToggles.count { isToggleOn(it) } + services.size
++
++        val status = if (count == 0) {
++            resources.getString(R.string.accessibility_none)
++        } else {
++            resources.getQuantityString(R.plurals.accessibility_features_on, count, count)
+         }
+ 
+         accessibilityTwoLineButton.setSpan(
+             SpannableString(resources.getString(R.string.accessibility_status, status))
+         )
+ 
+-        accessibilityTwoLineButton.setOnClickListener {
+-            startActivity(ACCESSIBILITY_SETTINGS)
++        accessibilityTwoLineButton.setOnClickListener { showAccessibilityToggles() }
++    }
++
++    private fun showAccessibilityToggles() {
++        val labels = accessibilityToggles.map { resources.getString(it.labelRes) }.toTypedArray()
++        val checked = accessibilityToggles.map { isToggleOn(it) }.toBooleanArray()
++
++        val dialog = AlertDialog.Builder(this)
++            .setTitle(R.string.accessibility_title)
++            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
++                applyAccessibilityToggle(accessibilityToggles[which], isChecked)
++            }
++            // Font scale, text-to-speech and any sideloaded service live on the
++            // full screen; this panel only carries the switches.
++            .setNeutralButton(R.string.accessibility_more) { _, _ ->
++                startActivity(ACCESSIBILITY_SETTINGS)
++            }
++            .setPositiveButton(android.R.string.ok, null)
++            .create()
++
++        dialog.window?.let { window ->
++            window.attributes = window.attributes.apply { gravity = Gravity.END }
++            window.setLayout(
++                resources.getDimensionPixelSize(R.dimen.audio_output_dialog_width),
++                WindowManager.LayoutParams.WRAP_CONTENT
++            )
++        }
++        dialog.setOnDismissListener { setAccessibilityButton() }
++        dialog.show()
++    }
++
++    /**
++     * These are all Settings.Secure writes, which is why this needs
++     * WRITE_SECURE_SETTINGS — already held for the panel's other tiles. They
++     * take effect immediately; nothing has to be restarted.
++     */
++    private fun applyAccessibilityToggle(toggle: AccessibilityToggle, enable: Boolean) {
++        val value = if (enable) toggle.on else toggle.off
++        try {
++            Settings.Secure.putInt(contentResolver, toggle.setting, value)
++        } catch (e: SecurityException) {
++            Log.e(LOG_TAG, "not allowed to write ${toggle.setting}", e)
+         }
+     }
+ 
+@@ -706,6 +793,9 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     companion object {
+         private const val LOG_TAG = "SystemOptions"
+ 
++        // AccessibilityFragment in TvSettings uses the same value.
++        private const val BOLD_TEXT_ADJUSTMENT = 300
++
+         val SETTINGS: Intent = Intent(Settings.ACTION_SETTINGS)
+         val WIFI_SETTINGS: Intent = Intent(Settings.ACTION_WIFI_SETTINGS)
+         val BLUETOOTH_SETTINGS: Intent = Intent().apply {
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 38c00f4..b41fa93 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -38,12 +38,19 @@
+     <string name="screensaver_status">Screensaver\n%1$s</string>
+     <string name="screensaver_not_set">Not set</string>
+     <string name="screensaver_start">Start now</string>
+-    <plurals name="accessibility_services_on">
+-        <item quantity="one">%1$d service on</item>
+-        <item quantity="other">%1$d services on</item>
++    <plurals name="accessibility_features_on">
++        <item quantity="one">%1$d feature on</item>
++        <item quantity="other">%1$d features on</item>
+     </plurals>
+     <string name="accessibility_status">Accessibility\n%1$s</string>
+-    <string name="accessibility_none">No services on</string>
++    <string name="accessibility_none">Nothing on</string>
++    <string name="accessibility_title">Accessibility</string>
++    <string name="accessibility_more">More settings</string>
++    <string name="accessibility_bold_text">Bold text</string>
++    <string name="accessibility_high_contrast_text">High contrast text</string>
++    <string name="accessibility_color_correction">Colour correction</string>
++    <string name="accessibility_captions">Captions</string>
++    <string name="accessibility_audio_description">Audio description</string>
+     <string name="panel_shortcut_status">Panel shortcut\n%1$s</string>
+     <string name="enabled">Enabled</string>
+     <string name="disabled">Disabled</string>
+-- 
+2.43.0
+

@@ -223,6 +223,42 @@ repainting itself each way and ~495 KB of SBC over RTP arriving at the sink.
 Still unproven on real hardware, where a physical speaker may behave differently
 on reconnect.
 
+## Catapult/0005 — make the accessibility tile toggle things
+
+The tile counted enabled accessibility *services*. On a stock LineageOS TV
+build that count is always zero — **no accessibility service is installed at
+all**, TalkBack being a Google app — so it could only ever read "No services
+on" and then hand off to the settings screen.
+
+What the platform does have is switches. The tile now toggles the five the
+TvSettings Accessibility screen exposes: bold text, high contrast text, colour
+correction, captions and audio description. All are `Settings.Secure` writes
+covered by the `WRITE_SECURE_SETTINGS` this package already holds, so no new
+permission. "More settings" still reaches the full screen for font scale,
+text-to-speech and any sideloaded service, and an enabled service still counts
+towards the summary.
+
+Two traps:
+
+- **Bold text is not 0/1.** `FONT_WEIGHT_ADJUSTMENT` is a weight delta and
+  TvSettings uses 300, so each toggle carries its own on/off pair rather than
+  assuming a boolean.
+- **Toggling it raises `CONFIG_FONT_WEIGHT_ADJUSTMENT`**, which recreated the
+  activity and destroyed the open dialog — the first toggle applied and the
+  dialog vanished, which looks like a dismiss bug and is not.
+  `SystemOptionsActivity` now declares `configChanges="fontWeightAdjustment"`.
+
+Also worth knowing: the constant names do not match the setting keys.
+`ACCESSIBILITY_HIGH_TEXT_CONTRAST_ENABLED` is `"high_text_contrast_enabled"`,
+and `ENABLED_ACCESSIBILITY_AUDIO_DESCRIPTION_BY_DEFAULT` is
+`"enabled_accessibility_audio_description_by_default"`. Checking the wrong key
+makes a working toggle look broken.
+
+**Status**: verified on `lineage_sdk_tv_x86_64`. All five write their setting
+and apply live — the panel visibly renders bold and high-contrast once those
+are on — the dialog survives the bold-text toggle, and the summary updates on
+dismiss.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set
