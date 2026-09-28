@@ -73,6 +73,24 @@ in those four paths — commit before running it. `repo` also prints
 `error: hooks is different in ...` while relinking the hook symlinks; it then
 reports success and the hooks are intact.
 
+## Pushing a change to a fork
+
+`repo` gives each project a remote named `github` pointing at the fork over
+**https**, which cannot be pushed to. Add an ssh remote once per project:
+
+```
+git remote add fork git@github.com:calicopizzadelivery/<repo>.git
+git push fork HEAD:refs/heads/lineage-22.2-jetson-tv
+```
+
+That remote does not survive `local-manifest.sh` re-running: a manifest change
+moves the project to a different object directory and the remote goes with it.
+Re-adding it is harmless and idempotent enough to just do again.
+
+Commits live on a detached HEAD, as everything under `repo` does. Keep a
+`jetson-tv` branch pointing at them (`git branch -f jetson-tv HEAD`) so they are
+referenced and cannot be garbage-collected between a commit and a push.
+
 ## What this means for `patches/`
 
 The patch queue is no longer how the code gets into the tree — the forks are.

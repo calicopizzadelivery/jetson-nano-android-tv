@@ -186,6 +186,32 @@ Tegra" reports that held back 19.1 and 20.
 **Status**: verified present in the built kernel via `/proc/config.gz`.
 Pairing itself is still unproven — that needs a radio.
 
+## Catapult/0004 — make the audio output tile a picker
+
+The tile reported the live output and then opened Sound settings, which on this
+build has nothing to do with choosing an output device. It now lists the
+built-in output and every connected Bluetooth sink.
+
+Switching output *is* activating or deactivating a Bluetooth sink: A2DP
+outranks HDMI in the platform's routing policy, so "use HDMI" means "have no
+active Bluetooth audio device". The calls are
+`BluetoothAdapter.setActiveDevice` / `removeActiveDevice` with
+`ACTIVE_DEVICE_AUDIO` — the same pair TvSettings uses from `AccessoryUtils`.
+
+Reading state stays on public API (`AudioManager.getDevices` plus
+`AudioDeviceInfo.getAddress`); only the switch needs `BLUETOOTH_PRIVILEGED`, so
+a build where that is refused still reports correctly. The A2DP profile proxy
+is bound because `AudioManager` lists a Bluetooth sink only while it is the
+*active* route and so cannot enumerate connected-but-idle ones.
+
+**Status**: partly verified on `lineage_sdk_tv_x86_64`. Confirmed: the tile
+reports the built-in output, `BLUETOOTH_PRIVILEGED` and `BLUETOOTH_CONNECT` are
+both granted at runtime, the one-output case opens accessory settings instead
+of a single-item list, and nothing crashes. **Not confirmed**: the multi-device
+list and the switch itself — neither the emulator nor the bench has a Bluetooth
+audio sink. The dialog layout was checked with a temporary stub, since removed.
+Do not send this upstream until it has driven a real speaker.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set
