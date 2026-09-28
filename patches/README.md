@@ -158,6 +158,34 @@ selected, and returns on reselecting. This one **is** upstreamable: it is a
 generic gap, not a porg policy, and it is what makes
 `patches/porg/0002`'s screensaver configurable.
 
+## tegra-common/0001 — wifi_loader could not load any module
+
+Two defects in `initfiles/wifi_loader.sh`. It insmods from
+`/system/lib/modules`, which does not exist on a current build — modules go to
+`/vendor/lib/modules` — so every branch tests a path that is never there and it
+silently loads nothing. And `perform_enumeration()` matches only Broadcom
+vendor ids, so a Realtek card is never detected and `$device` is never set,
+while the tree ships a working `rtl8822ce.ko` that sits unloaded.
+
+Adds the Realtek PCIe vendor id and an insmod branch for `10ec:c822`, loading
+`cfg80211` first because the Realtek driver is built against it and nothing
+else pulls it in on a board with no Broadcom radio.
+
+**Status**: the path fix is unambiguous and upstreamable as-is. The Realtek
+branch is **untested** — no radio is fitted to the bench. Do not send that half
+upstream until it has run on hardware.
+
+## kernel/0001 — enable CONFIG_BT_LE
+
+`net/bluetooth/Kconfig` has `config BT_LE ... default y`, but every tegra
+defconfig ships `# CONFIG_BT_LE is not set`, so the built kernel has no BLE at
+all. Android TV remotes are BLE, so this breaks pairing whatever radio is
+fitted, and is a plausible root cause for the "BLE does not work on ARM64
+Tegra" reports that held back 19.1 and 20.
+
+**Status**: verified present in the built kernel via `/proc/config.gz`.
+Pairing itself is still unproven — that needs a radio.
+
 ## vendor_lineage/0001 — unblock the TV SDK products
 
 All three `lineage_sdk_tv_*` products set

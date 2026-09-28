@@ -15,6 +15,8 @@ DST="${SRC}/.repo/local_manifests/zz-jetson-tv.xml"
 
 PROJECTS=(
     device/nvidia/porg
+    device/nvidia/tegra-common
+    kernel/nvidia/kernel-4.9
     packages/apps/TvSettings
     packages/apps/Catapult
     vendor/lineage

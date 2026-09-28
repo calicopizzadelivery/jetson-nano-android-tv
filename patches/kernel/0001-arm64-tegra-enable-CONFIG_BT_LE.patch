@@ -1,0 +1,79 @@
+From 60d044646de0be1368200d0cab2fe6c116de7841 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Mon, 28 Sep 2026 04:21:21 -0500
+Subject: [PATCH] arm64: tegra: enable CONFIG_BT_LE
+
+net/bluetooth/Kconfig has "config BT_LE ... default y", but every tegra
+defconfig shipped "# CONFIG_BT_LE is not set", so the built kernel has no
+Bluetooth Low Energy at all.
+
+That breaks pairing for any BLE remote regardless of which radio is
+fitted, and is a plausible root cause for the long-standing "BLE does not
+work on ARM64 Tegra" reports that held back 19.1 and 20 on this hardware.
+
+Verified present in the built kernel via /proc/config.gz.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Id7a265aceded6ded7fa1ee78708afb280d93dc02
+---
+ arch/arm64/configs/defconfig                        | 2 +-
+ arch/arm64/configs/tegra_android_defconfig          | 2 +-
+ arch/arm64/configs/tegra_android_recovery_defconfig | 2 +-
+ arch/arm64/configs/tegra_defconfig                  | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm64/configs/defconfig b/arch/arm64/configs/defconfig
+index 19f25d2c57ee..8fe819955fc2 100644
+--- a/arch/arm64/configs/defconfig
++++ b/arch/arm64/configs/defconfig
+@@ -129,7 +129,7 @@ CONFIG_BPF_JIT=y
+ CONFIG_BT=m
+ CONFIG_BT_HIDP=m
+ # CONFIG_BT_HS is not set
+-# CONFIG_BT_LE is not set
++CONFIG_BT_LE=y
+ CONFIG_BT_LEDS=y
+ # CONFIG_BT_DEBUGFS is not set
+ CONFIG_BT_HCIUART=m
+diff --git a/arch/arm64/configs/tegra_android_defconfig b/arch/arm64/configs/tegra_android_defconfig
+index d3f942f656a0..e816cadfc36b 100644
+--- a/arch/arm64/configs/tegra_android_defconfig
++++ b/arch/arm64/configs/tegra_android_defconfig
+@@ -222,7 +222,7 @@ CONFIG_MTTCAN=m
+ CONFIG_TEGRA_HV_SECCAN=m
+ CONFIG_BT=y
+ CONFIG_BT_HIDP=y
+-# CONFIG_BT_LE is not set
++CONFIG_BT_LE=y
+ CONFIG_BT_LEDS=y
+ # CONFIG_BT_DEBUGFS is not set
+ CONFIG_BT_HCIBTUSB=m
+diff --git a/arch/arm64/configs/tegra_android_recovery_defconfig b/arch/arm64/configs/tegra_android_recovery_defconfig
+index 966215395192..033d5bc9275c 100644
+--- a/arch/arm64/configs/tegra_android_recovery_defconfig
++++ b/arch/arm64/configs/tegra_android_recovery_defconfig
+@@ -220,7 +220,7 @@ CONFIG_MTTCAN=m
+ CONFIG_TEGRA_HV_SECCAN=m
+ CONFIG_BT=y
+ CONFIG_BT_HIDP=y
+-# CONFIG_BT_LE is not set
++CONFIG_BT_LE=y
+ CONFIG_BT_LEDS=y
+ # CONFIG_BT_DEBUGFS is not set
+ CONFIG_BT_HCIBTUSB=m
+diff --git a/arch/arm64/configs/tegra_defconfig b/arch/arm64/configs/tegra_defconfig
+index 56dc459f7c25..4a3521867094 100644
+--- a/arch/arm64/configs/tegra_defconfig
++++ b/arch/arm64/configs/tegra_defconfig
+@@ -251,7 +251,7 @@ CONFIG_BT=y
+ CONFIG_BT_RFCOMM=y
+ CONFIG_BT_BNEP=m
+ CONFIG_BT_HIDP=y
+-# CONFIG_BT_LE is not set
++CONFIG_BT_LE=y
+ CONFIG_BT_LEDS=y
+ # CONFIG_BT_DEBUGFS is not set
+ CONFIG_BT_HCIBTUSB=m
+-- 
+2.43.0
+

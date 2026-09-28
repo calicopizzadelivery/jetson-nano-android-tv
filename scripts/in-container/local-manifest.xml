@@ -36,6 +36,18 @@
            name="calicopizzadelivery/android_packages_apps_Catapult"
            revision="refs/heads/lineage-22.2-jetson-tv" />
 
+  <remove-project path="device/nvidia/tegra-common" optional="true" />
+  <project path="device/nvidia/tegra-common" remote="github"
+           name="calicopizzadelivery/android_device_nvidia_tegra-common"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
+  <!-- The kernel tracks lineage-22.2_4.9 upstream, not lineage-22.2, so our
+       branch is named after the branch it forks. -->
+  <remove-project path="kernel/nvidia/kernel-4.9" optional="true" />
+  <project path="kernel/nvidia/kernel-4.9" remote="github"
+           name="calicopizzadelivery/android_kernel_nvidia_kernel"
+           revision="refs/heads/lineage-22.2_4.9-jetson-tv" />
+
   <remove-project path="vendor/lineage" optional="true" />
   <project path="vendor/lineage" remote="github"
            name="calicopizzadelivery/android_vendor_lineage"

@@ -1,14 +1,21 @@
 # Our forks, and how they get into the build
 
-Four LineageOS projects carry commits of ours. They live in forks under
-`calicopizzadelivery`, on the branch **`lineage-22.2-jetson-tv`**:
+Six LineageOS projects carry commits of ours. They live in forks under
+`calicopizzadelivery`:
 
-| Project in the tree | Fork | Commits |
-| --- | --- | --- |
-| `device/nvidia/porg` | `android_device_nvidia_porg` | 2 |
-| `packages/apps/TvSettings` | `android_packages_apps_TvSettings` | 2 |
-| `packages/apps/Catapult` | `android_packages_apps_Catapult` | 3 |
-| `vendor/lineage` | `android_vendor_lineage` | 1 |
+| Project in the tree | Fork | Branch | Commits |
+| --- | --- | --- | --- |
+| `device/nvidia/porg` | `android_device_nvidia_porg` | `lineage-22.2-jetson-tv` | 2 |
+| `device/nvidia/tegra-common` | `android_device_nvidia_tegra-common` | `lineage-22.2-jetson-tv` | 1 |
+| `kernel/nvidia/kernel-4.9` | `android_kernel_nvidia_kernel` | `lineage-22.2_4.9-jetson-tv` | 1 |
+| `packages/apps/TvSettings` | `android_packages_apps_TvSettings` | `lineage-22.2-jetson-tv` | 2 |
+| `packages/apps/Catapult` | `android_packages_apps_Catapult` | `lineage-22.2-jetson-tv` | 3 |
+| `vendor/lineage` | `android_vendor_lineage` | `lineage-22.2-jetson-tv` | 1 |
+
+The kernel tracks `lineage-22.2_4.9` upstream rather than `lineage-22.2`, so its
+branch is named after the branch it forks. Its history is ~1.1 GB, but forking
+is server-side and a fork network shares objects, so pushing our one commit was
+instant.
 
 They are GitHub forks rather than fresh repos on purpose: the fork relationship
 keeps the upstream remote, so opening a PR or pushing to Gerrit is a normal
@@ -73,15 +80,16 @@ The patch queue is no longer how the code gets into the tree — the forks are.
 two are kept in step by hand, and `git format-patch` against the fork branch is
 what regenerates them.
 
-## Still not forked
+## Nothing is patched in place any more
 
-`repo status` shows two other modified projects, both applied idempotently by
-`tree-local-changes.sh` rather than committed:
+`tree-local-changes.sh` used to `sed` two upstream repos on every run —
+`CONFIG_BT_LE` into four tegra defconfigs, and the two `wifi_loader.sh`
+defects. Both are now ordinary commits on our forks, so the script no longer
+edits code we do not own. What is left of it is installing `vendor/jetson-tv`,
+which is ours and is not a repo project at all.
 
-- `device/nvidia/tegra-common` — the `wifi_loader.sh` fix
-- `kernel/nvidia/kernel-4.9` — `CONFIG_BT_LE` in four defconfigs
-
-These are durable already, because the script that writes them is in this repo.
-Forking them would make them real commits and shrink `tree-local-changes.sh` to
-just installing `vendor/jetson-tv`, which is probably the right end state. The
-kernel repo is large, so it has not been done.
+`repo status` across all 1141 projects now reports *"nothing to commit
+(working directory clean)"*. That is the point of the exercise: every change is
+either upstream, a commit on one of our six forks, or a file under
+`vendor/jetson-tv`. Nothing depends on a script having run, and nothing is
+lost if the tree is wiped.

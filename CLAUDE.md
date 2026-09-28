@@ -375,10 +375,17 @@ Remaining:
 
 ## Forks (2026-09-27)
 
-Four projects carry commits of ours and are now **synced from forks**, not
-patched: `device/nvidia/porg`, `packages/apps/TvSettings`,
-`packages/apps/Catapult`, `vendor/lineage` — all on branch
-`lineage-22.2-jetson-tv` under `calicopizzadelivery`.
+Six projects carry commits of ours and are now **synced from forks**, not
+patched: `device/nvidia/porg`, `device/nvidia/tegra-common`,
+`kernel/nvidia/kernel-4.9`, `packages/apps/TvSettings`,
+`packages/apps/Catapult`, `vendor/lineage` — all under `calicopizzadelivery`,
+on `lineage-22.2-jetson-tv` except the kernel, which forks `lineage-22.2_4.9`
+and so is on `lineage-22.2_4.9-jetson-tv`.
+
+**`tree-local-changes.sh` no longer patches upstream repos.** The BT_LE
+defconfigs and the `wifi_loader.sh` fixes are commits on our forks now; that
+script only installs `vendor/jetson-tv`. `repo status` across the whole tree
+reports clean.
 
 The mechanism is a repo **local manifest**, not submodules; submodules cannot
 work here because the source tree is populated by `repo`, not by this repo.
