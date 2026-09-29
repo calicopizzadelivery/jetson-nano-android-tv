@@ -48,6 +48,18 @@
            name="calicopizzadelivery/android_kernel_nvidia_kernel"
            revision="refs/heads/lineage-22.2_4.9-jetson-tv" />
 
+  <!-- AirPlay audio receiver. Not an upstream LineageOS project at all: these
+       two are forks of their own upstreams carrying an Android port on the
+       android-jetson-tv branch, so there is nothing to remove-project first.
+       popt is here because shairport-sync requires it unconditionally and AOSP
+       does not ship it; libconfig and mbedtls it needs are already in-tree. -->
+  <project path="external/shairport-sync" remote="github"
+           name="calicopizzadelivery/shairport-sync"
+           revision="refs/heads/android-jetson-tv" />
+  <project path="external/popt" remote="github"
+           name="calicopizzadelivery/popt"
+           revision="refs/heads/android-jetson-tv" />
+
   <remove-project path="vendor/lineage" optional="true" />
   <project path="vendor/lineage" remote="github"
            name="calicopizzadelivery/android_vendor_lineage"

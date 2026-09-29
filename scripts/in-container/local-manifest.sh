@@ -20,6 +20,8 @@ PROJECTS=(
     packages/apps/TvSettings
     packages/apps/Catapult
     vendor/lineage
+    external/shairport-sync
+    external/popt
 )
 
 note() { printf '    [manifest] %s\n' "$1"; }
