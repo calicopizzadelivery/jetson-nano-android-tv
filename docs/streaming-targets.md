@@ -95,7 +95,54 @@ SELinux policy lives in `device/nvidia/porg/sepolicy/private` — porg is ours,
 a vendor component, at which point executing its own binary trips three
 neverallows in `domain.te` about vendor components touching `/system`.
 
-### What is proven, and what is not
+### End to end
+
+Proven on `lineage_sdk_tv_x86_64`: a 440 Hz tone sent over AirPlay arrives at a
+Bluetooth speaker.
+
+    sender (raopsend) -> RTSP/RTP -> shairport-sync -> AAudio
+      -> AudioFlinger -> A2DP -> Bluetooth speaker
+
+The receiver logs `aaudio: started 2 channels at 44100 fps, device 26`, the
+audio route is `bt_a2dp`, and the speaker's received-byte counter moves by
+121,528 bytes in 148 RTP packets across a 10-second stream — against a
+measured idle baseline where it does not move at all. The daemon survives the
+session and does not crash.
+
+That is the whole chain, including the output picker: AirPlay audio follows
+whatever output was chosen in the panel, which is exactly what the AAudio
+back end was for.
+
+### Testing it
+
+`scripts/in-container/raopsend` is a small classic-RAOP sender, built with
+`m raopsend` and pushed to the device. It has to run **on** the device: RAOP
+carries audio over UDP, `adb forward` is TCP only, and the emulator console's
+`redir` targets eth0 while the emulator's IPv4 address lands on wlan0.
+
+Two things make it short. Shairport accepts uncompressed `L16/44100/2`, so
+there is no ALAC encoder; and a stream carrying neither `a=aesiv` nor
+`a=rsaaeskey` is treated as unencrypted, so there is no RSA key exchange.
+
+**The SDP must not carry an `a=fmtp:` line.** Shairport's ANNOUNCE handler
+does `if (pfmtp) { conn->stream.type = ast_apple_lossless; }` — the mere
+presence of fmtp selects ALAC whatever the rtpmap says. The ALAC decoder then
+chokes on PCM with *"unhandled prediction type for compressed case: 3"* and
+segfaults, taking the receiver with it. The uncompressed branch sets frames
+per packet, rate, channels and depth itself, so fmtp has nothing to add.
+
+Before any of this works the emulator needs IPv4, which it does not have until
+wifi is associated:
+
+    adb shell cmd wifi connect-network AndroidWifi open
+
+Without it there is no IPv4 at all and tinysvcmdns cannot join the multicast
+group — the `IP_ADD_MEMBERSHIP: No such device` failure.
+
+`pyatv` cannot be the sender: it probes `GET /info` first, which is AirPlay 2,
+and a Classic receiver never answers it.
+
+### Earlier findings
 
 Proven on `lineage_sdk_tv_x86_64`: the daemon starts in Classic AirPlay mode
 with `audio backend is "aaudio"`, registers with tinysvcmdns and holds 5353,

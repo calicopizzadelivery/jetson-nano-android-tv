@@ -1,0 +1,14 @@
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+//
+// A classic-RAOP sender, for testing the AirPlay receiver on-device. Not
+// installed in the image: built with `m raopsend` and pushed.
+
+cc_binary {
+    name: "raopsend",
+    srcs: ["raopsend.c"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}

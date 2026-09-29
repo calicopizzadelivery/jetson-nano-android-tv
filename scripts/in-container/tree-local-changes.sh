@@ -48,7 +48,33 @@ install_decodetest() {
 }
 
 # ---------------------------------------------------------------------------
-# 2. AmbientDream
+# 2. raopsend
+#
+# A classic-RAOP sender for testing the AirPlay receiver from the device
+# itself. It has to run there: RAOP carries audio over UDP, adb forward is TCP
+# only, and the emulator console's redir targets eth0 while the emulator's
+# IPv4 address lands on wlan0.
+#
+#   m raopsend && adb push $OUT/system/bin/raopsend /data/local/tmp/
+#   adb shell /data/local/tmp/raopsend 127.0.0.1 5000 6
+# ---------------------------------------------------------------------------
+install_raopsend() {
+    local src="/opt/jetson-tv/raopsend"
+    local dst="${SRC}/vendor/jetson-tv/raopsend"
+    [[ -d ${src} ]] || return 0
+    if [[ -d ${dst} ]] && diff -rq "${src}" "${dst}" >/dev/null 2>&1; then
+        note "raopsend already current"
+        return 0
+    fi
+    rm -rf "${dst}"
+    mkdir -p "$(dirname "${dst}")"
+    cp -r "${src}" "${dst}"
+    note "raopsend installed to vendor/jetson-tv"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# 3. AmbientDream
 #
 # A clock over a slow slideshow of NASA photographs, for a box that is expected
 # to always be driving a television. Copied into vendor/ for the same reason as
@@ -92,6 +118,7 @@ install_vendor_mk() {
 }
 
 install_decodetest
+install_raopsend
 install_ambient_dream
 install_vendor_mk
 note "done"
