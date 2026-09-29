@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AirPlay</string>
+    <string name="channel_name">AirPlay</string>
+    <string name="receiver_ready">Ready to stream</string>
+    <string name="receiver_streaming">Streaming from %1$s</string>
+    <string name="unknown_device">a nearby device</string>
+</resources>

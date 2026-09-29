@@ -6,4 +6,5 @@
 # without vendor/jetson-tv still configures and builds.
 
 PRODUCT_PACKAGES += \
+    AirPlayReceiver \
     AmbientDream

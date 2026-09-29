@@ -1,0 +1,18 @@
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+
+android_app {
+    name: "AirPlayReceiver",
+    srcs: ["src/**/*.java"],
+    resource_dirs: ["res"],
+    manifest: "AndroidManifest.xml",
+
+    // platform_apis for SystemProperties, which is how the daemon is started:
+    // init owns the service, this only sets the property.
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+
+    required: ["shairport-sync"],
+}

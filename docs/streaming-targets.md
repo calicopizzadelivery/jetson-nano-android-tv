@@ -175,10 +175,69 @@ and treats a stream with neither `a=aesiv` nor `a=rsaaeskey` as unencrypted
 works as far as the network lets it and wants rebuilding as a small on-device
 binary.
 
+### Metadata, and what goes on screen
+
+Shairport is headless. It emits metadata on a pipe and leaves the display to
+whatever is reading it, which is what `AirPlayReceiver` is for.
+
+The hub carries more than enough for a now-playing screen:
+
+| | |
+| --- | --- |
+| `track_name`, `artist_name`, `album_name`, `album_artist_name` | the track |
+| `genre`, `composer`, `comment`, `file_kind` | the rest of the tags |
+| `cover_art_pathname` / `PICT` items | artwork, as JPEG |
+| **`client_name`** | **the sending device — "Phil's iPhone"** |
+| `client_ip`, `server_ip`, `stream_type` | the session |
+| `source_format` | e.g. `AAC/44100/S16_LE/2` |
+| `progress_string` | position |
+
+The wire format is a stream of
+`<item><type>hex</type><code>hex</code><length>n</length><data encoding="base64">…</data></item>`,
+where type and code are four-character codes packed into 32 bits. `core` items
+are what the sender told us about the track; `ssnc` items are Shairport's own
+notifications — `pbeg`/`pend` for play begin and end, `PICT` for artwork,
+`snam` for the sending device's name.
+
+`AirPlayReceiver` parses those and publishes a **MediaSession**, which is the
+Android-native way to get a now-playing surface: the system media controls
+pick it up, and the panel or the screensaver can read the same session rather
+than each growing its own AirPlay support.
+
+### The control service
+
+`AirPlayReceiver` (`vendor/jetson-tv/AirPlayReceiver`) is a foreground service
+that does the two things a headless daemon cannot do for itself:
+
+- **Holds audio focus**, so AirPlay and Kodi do not talk over each other. It
+  takes focus when a stream actually starts rather than when the receiver is
+  enabled — the box may sit advertising for hours, and holding focus that whole
+  time would silence everything else for no reason. On `AUDIOFOCUS_LOSS` it
+  stops receiving rather than fighting whatever took over.
+- **Publishes the MediaSession** from the metadata pipe.
+
+It never execs anything. The daemon is an init service and this only sets
+`persist.jetsontv.airplay.enabled`, which keeps the SELinux story small — an
+app that could exec a system binary would need far more.
+
+Two things worth knowing if you touch it:
+
+- **`SystemProperties.set` throws** rather than returning a failure when the
+  write is refused, which it is on any build without our property label. Left
+  unguarded it takes the whole service down at startup, so the receiver dies
+  instead of merely having no daemon to talk to.
+- Opening a FIFO blocks until a writer appears and returns EOF every time the
+  writer closes; both are normal, so the reader loops. When the pipe does not
+  exist at all it backs off and says so once, rather than spinning.
+
 ### Still to do
 
-1. **An on-device RAOP sender** to close the end-to-end test.
-2. **An Android service** to hold audio focus, so AirPlay and Kodi do not talk
-   over each other, and to set the property.
-3. **A Streaming tile** in the panel — what is advertised, and an off switch.
+1. **Exercise the metadata path end to end.** It needs the porg image (or the
+   porg sepolicy temporarily added to the emulator build) *and* `raopsend`
+   extended to send DAAP tags over `SET_PARAMETER` — it currently sends audio
+   and nothing else, so there is no metadata for the pipe to carry.
+2. **A Streaming tile** in the panel — what is advertised, and an off switch.
+3. **A now-playing surface**: the MediaSession exists, nothing draws it yet.
+   AmbientDream is the obvious place, since it is already what the screen shows
+   when nothing else is happening.
 4. **FCast**, for video.
