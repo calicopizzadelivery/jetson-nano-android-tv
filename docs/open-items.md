@@ -88,10 +88,18 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 
 ## Game streaming (new, 30 September)
 
-20. **Moonlight (with a Sunshine host) and Steam Link.** Both are ordinary
-    Android apps decoding with MediaCodec, so nothing has to be built into the
-    image. The work is installing them, pairing with a host, and measuring.
-    Assessment below.
+20. **Moonlight (with a Sunshine host) and Steam Link.** *Moonlight measured
+    30 September: viable.* 1080p60 is solid (60/60 fps, 0% drops, ~1 ms
+    decode). 4K60 decodes at a full 60 fps too, at the same ~70%-of-400% CPU.
+    See `docs/game-streaming.md`. Still to do:
+    - 4K against a real gaming PC with GPU capture: thebe's rootless
+      Xephyr/XShm capture was the 4K bottleneck.
+    - Controllers: USB now; Bluetooth waits on items 2 and 4.
+    - Audio and surround, and HDR (items 8 and 9).
+    - Wi-Fi, once the radio is in.
+    - Steam Link, if it can be installed without the Play Store.
+    The assessment below was written before measuring and is kept for
+    comparison.
 
 ### Moonlight and Steam Link on this platform
 

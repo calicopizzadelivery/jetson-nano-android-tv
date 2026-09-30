@@ -1,0 +1,16 @@
+//
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+//
+
+// A calibration tool for the game-streaming latency tests, never shipped:
+// draws pattern.py's timing strip from the Jetson's own clock, so the
+// capture path can be measured on its own. See docs/game-streaming.md.
+android_app {
+    name: "StripClock",
+    srcs: ["src/**/*.java"],
+    manifest: "AndroidManifest.xml",
+    sdk_version: "current",
+    certificate: "platform",
+    dex_preopt: { enabled: false },
+}

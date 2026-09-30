@@ -447,6 +447,13 @@ Remaining:
 
 ## Open items and eMMC wear (2026-09-30)
 
+**Game streaming works (2026-09-30).** Moonlight 12.2 on the Jetson against
+Sunshine on thebe, measured by reading a clock strip back off HDMI:
+1080p60 is solid, with 60/60 fps, no drops, about 1 ms of decode, and about
+70% of 400% CPU. The harness is in `scripts/gamestream/`, results and traps
+in `docs/game-streaming.md`. thebe's rootless capture (Xephyr and XShm)
+limits 4K; test 4K against a real gaming PC.
+
 **`docs/open-items.md` is the running list** of what is left to test or
 build, grouped by what it waits on: the radio, Apple hardware, other
 hardware, or nothing. It includes game streaming (Moonlight/Sunshine, Steam
