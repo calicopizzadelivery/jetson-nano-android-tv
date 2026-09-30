@@ -1,0 +1,130 @@
+From 00a0950ed7feded9b7345b9b35ba48c8cb703499 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 12:17:29 -0500
+Subject: [PATCH] System options panel: an even inset around every row
+
+With no side padding, the tiles ran to the panel's edge, and a focused
+edge tile's zoom was cut off there. Every row now has the same inset,
+system_options_edge (16dp): the clock above uses it, and so do the
+notifications below, so the whole panel shares one edge.
+
+That costs each tile 16dp, and "Audio output" and "Panel shortcut" then
+wrapped. A tile's text is a title and a status in at most two lines, so
+a wrapped title pushes the status out. The two-line tiles take 12dp of
+internal padding instead of the button default, which gives the text
+back more room than the inset took.
+
+Change-Id: I3d9b2f6a1c7e40b8a5d2e9f0c4b7a1e6d3f8c2a5
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../res/layout/activity_system_options.xml    | 28 ++++++++++++++-----
+ app/src/main/res/values/dimens.xml            |  4 +++
+ app/src/main/res/values/styles.xml            |  6 ++++
+ 3 files changed, 31 insertions(+), 7 deletions(-)
+
+diff --git a/app/src/main/res/layout/activity_system_options.xml b/app/src/main/res/layout/activity_system_options.xml
+index 5558114..198af92 100644
+--- a/app/src/main/res/layout/activity_system_options.xml
++++ b/app/src/main/res/layout/activity_system_options.xml
+@@ -53,7 +53,9 @@
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="8dp"
+-                android:clipToPadding="false">
++                android:clipToPadding="false"
++                android:paddingStart="@dimen/system_options_edge"
++                android:paddingEnd="@dimen/system_options_edge">
+ 
+                 <com.google.android.material.button.MaterialButton
+                     android:id="@+id/sleepMaterialButton"
+@@ -94,13 +96,16 @@
+ 
+             </LinearLayout>
+ 
+-            <!-- No side padding, and the same 6dp above as the rows below:
+-                 the tiles all line up edge to edge and evenly spaced. -->
++            <!-- Every row has the same side padding, and the same 6dp above
++                 it: the tiles line up with each other, with the clock above
++                 and with the notifications below, evenly spaced. -->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="6dp"
+-                android:clipToPadding="false">
++                android:clipToPadding="false"
++                android:paddingStart="@dimen/system_options_edge"
++                android:paddingEnd="@dimen/system_options_edge">
+ 
+                 <org.lineageos.tv.launcher.view.TwoLineButton
+                     android:id="@+id/networkTwoLineButton"
+@@ -127,7 +132,10 @@
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="6dp"
+-                android:orientation="horizontal">
++                android:clipToPadding="false"
++                android:orientation="horizontal"
++                android:paddingStart="@dimen/system_options_edge"
++                android:paddingEnd="@dimen/system_options_edge">
+ 
+                 <org.lineageos.tv.launcher.view.TwoLineButton
+                     android:id="@+id/screensaverTwoLineButton"
+@@ -154,7 +162,10 @@
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="6dp"
+-                android:orientation="horizontal">
++                android:clipToPadding="false"
++                android:orientation="horizontal"
++                android:paddingStart="@dimen/system_options_edge"
++                android:paddingEnd="@dimen/system_options_edge">
+ 
+                 <org.lineageos.tv.launcher.view.TwoLineButton
+                     android:id="@+id/audioOutputTwoLineButton"
+@@ -181,7 +192,10 @@
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="6dp"
+-                android:orientation="horizontal">
++                android:clipToPadding="false"
++                android:orientation="horizontal"
++                android:paddingStart="@dimen/system_options_edge"
++                android:paddingEnd="@dimen/system_options_edge">
+ 
+                 <org.lineageos.tv.launcher.view.TwoLineButton
+                     android:id="@+id/streamingTwoLineButton"
+diff --git a/app/src/main/res/values/dimens.xml b/app/src/main/res/values/dimens.xml
+index f350786..0683625 100644
+--- a/app/src/main/res/values/dimens.xml
++++ b/app/src/main/res/values/dimens.xml
+@@ -4,6 +4,10 @@
+      SPDX-License-Identifier: Apache-2.0
+ -->
+ <resources>
++    <!-- Side inset of every row in the system options panel: the same as the
++         clock above them and the notifications below, and room for a focused
++         tile's zoom, which would otherwise be clipped at the panel edge. -->
++    <dimen name="system_options_edge">16dp</dimen>
+     <dimen name="app_card_height">100dp</dimen>
+     <dimen name="app_card_width">177dp</dimen>
+     <dimen name="watch_next_card_height">138dp</dimen>
+diff --git a/app/src/main/res/values/styles.xml b/app/src/main/res/values/styles.xml
+index 72e9c6c..96f2491 100644
+--- a/app/src/main/res/values/styles.xml
++++ b/app/src/main/res/values/styles.xml
+@@ -35,6 +35,12 @@
+         <item name="iconGravity">start</item>
+         <item name="android:maxLines">2</item>
+         <item name="android:ellipsize">end</item>
++        <!-- Less than the button's default: the text is a title and a status
++             in two lines, and a title that wraps pushes the status out. With
++             the panel's edge inset, "Audio output" and "Panel shortcut" need
++             this room to stay on one line. -->
++        <item name="android:paddingStart">12dp</item>
++        <item name="android:paddingEnd">12dp</item>
+     </style>
+ 
+     <style name="NotificationDismissButton" parent="Widget.AppCompat.Button.Borderless">
+-- 
+2.43.0
+

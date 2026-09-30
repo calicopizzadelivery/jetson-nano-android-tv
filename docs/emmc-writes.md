@@ -80,11 +80,70 @@ Not worth changing on these numbers: the ext4 commit interval, the dirty
 writeback timers, batterystats, or usage stats. Each would trade a few hundred
 KB an hour for less safety on power loss.
 
-**A separate robustness note, not about wear.** `/data` is mounted
-`nobarrier` by the device fstab. That skips cache flushes on journal commits,
-so a power cut can leave ext4 inconsistent. For an appliance people unplug,
-consider dropping it. Measure first, since barriers cost some write
-performance.
+## Power loss: write barriers on /data
+
+These boxes will have their power pulled routinely. `/data` is mounted
+`barrier=0,noauto_da_alloc`, from SHIELD's fstab. `fstab.porg` is
+`device/nvidia/foster/initfiles/fstab.emmc` unchanged, installed by foster's
+`device.mk` to `/vendor/etc` and the first-stage ramdisk. `/cache` already has
+`barrier=1`.
+
+**What the eMMC does itself** (EXT_CSD, read from
+`/d/mmc0/mmc0:0001/ext_csd`):
+
+- It has a 4 MiB volatile write cache, enabled (`CACHE_CTRL` 1). The queue
+  reports `write back`, so the kernel knows it needs flushing.
+- The cache flushes FIFO (`CACHE_FLUSH_POLICY` 1), so writes reach flash in
+  the order they were acknowledged.
+- Write reliability is set for every partition (`WR_REL_SET` 0x1f). A power
+  cut mid-write should not corrupt data already stored.
+
+**What `barrier=0` costs, then:** without cache flushes, fsync returns once
+data is in that 4 MiB cache, not on flash. A power pull can lose writes an app
+was told were safe: a setting, a database commit, a Kodi library update. FIFO
+flushing and write reliability make a broken journal much less likely than on
+an ordinary device, but they do nothing for durability.
+
+**What barriers cost** (300 single-row SQLite transactions, 1 KiB each,
+`synchronous=FULL`, `/data` remounted live, repeated twice):
+
+| Journal mode | barrier=0 | barrier=1 | |
+| --- | --- | --- | --- |
+| DELETE (rollback) | 7.6 ms/txn | 12.3 ms/txn | +60% |
+| WAL (Android's usual) | 4.4 ms/txn | 5.7 ms/txn | +30% |
+
+That is about 1-1.5 ms more per fsync. At the idle rates above it is
+invisible. It shows up in write-heavy moments: installs, dexopt, library
+scans.
+
+**The change:**
+
+1. Ship porg's own fstab from the porg fork, rather than forking foster:
+   `device/nvidia/porg/initfiles/fstab.porg` and `fstab.porg_sd`, copied from
+   foster's `fstab.emmc` and `fstab.sd`. Install them with `PRODUCT_COPY_FILES`
+   to `$(TARGET_COPY_OUT_VENDOR)/etc/fstab.porg[_sd]` and
+   `$(TARGET_COPY_OUT_RAMDISK)/fstab.porg[_sd]`. porg's own entries come ahead
+   of inherited ones, and the first entry for a destination wins. Check
+   `out/.../vendor/etc/fstab.porg` after the build.
+2. In both, change `/data` to `barrier=1` and drop `noauto_da_alloc`. With
+   `auto_da_alloc`, ext4 forces out a file's data when it is renamed over or
+   truncated. Apps that save by write-then-rename without fsync, as plenty of
+   non-framework code does, then do not come back as zero-length files after a
+   pull.
+3. Add `check` to `/cache`, so it gets an fsck after an unclean shutdown as
+   `/data` does.
+4. It is a vendor and ramdisk change, so it needs a full image. Afterwards,
+   `mount` must not show `nobarrier` for `/data`, and
+   `/proc/fs/ext4/mmcblk0p22/options` shows `barrier`.
+5. Prove it with the relay controller: pull power repeatedly in the middle of
+   a stream of SQLite commits, and after each boot check what survived against
+   what was reported committed, and what `e2fsck` found. Do it before and
+   after, so the difference is measured, not assumed.
+
+**The real fix is hardware.** A power-fail signal and a little hold-up
+capacitance would let the kernel flush and send the eMMC its power-off
+notification before the rails drop. That belongs to the carrier-board
+project, not this image.
 
 ## Measuring again
 

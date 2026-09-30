@@ -74,6 +74,9 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 17. **Shairport leftovers** in the porg fork: the `shairport` SELinux domain,
     uid 7500, and the `interrupt` property label.
 18. **eMMC write reduction.** See `docs/emmc-writes.md`.
+18a. **Write barriers on /data**, for routine power pulls. Measured cost:
+    about 1-1.5 ms per fsync. Planned as porg shipping its own fstab. See
+    `docs/emmc-writes.md`, "Power loss".
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.

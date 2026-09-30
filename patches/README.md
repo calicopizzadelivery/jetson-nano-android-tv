@@ -320,11 +320,21 @@ left it 3dp short. The Network row takes the same 6dp top margin as the rows
 below, so the rows are evenly spaced.
 
 **Status**: verified on porg by HDMI capture: every row the same width, and
-the columns aligned. **Known issue:** a focused tile's zoom now reaches the
-panel's edge, so a focused edge tile's outer corner is clipped. The unpadded
-tile rows from 0002-0006 always had this; the 16dp the first two rows had
-was what gave the zoom room. The fix is a small uniform side padding on every
-row; that decision is pending.
+the columns aligned. It left a focused edge tile clipped at the panel edge;
+0008 fixes that.
+
+## Catapult/0008 — an even inset around every row
+
+Every row gets the same 16dp side inset (`system_options_edge`). The clock
+above uses it, and so do the notifications below, so the panel has one edge.
+It also gives a focused tile's zoom (3% wide, 5% tall) room, which the
+full-width rows did not have. The inset cost "Audio output" and "Panel
+shortcut" their status line: a tile is a title and a status in at most two
+lines, and those titles wrapped. So the two-line tiles take 12dp of internal
+side padding instead of the button default.
+
+**Status**: verified on porg by HDMI capture. Every title and status is on
+its own line, and focused tiles at either edge are unclipped.
 
 ## porg/0003 — label shairport-sync by its real path
 
