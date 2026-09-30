@@ -21,3 +21,7 @@ dlcache/
 *.img
 *.tbz2
 *.txz
+
+# Python bytecode
+__pycache__/
+*.pyc
