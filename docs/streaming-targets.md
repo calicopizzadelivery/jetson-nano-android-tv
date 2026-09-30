@@ -500,10 +500,36 @@ stream played.
 
 ### What is on screen while streaming
 
-Only the now-playing panel in AmbientDream shows a stream, and the dream starts
-after `screen_off_timeout` — 15 minutes here — without input. Streaming does not
-hold it off (the receiver takes no screen wake lock), but a stream started from
-the home screen shows nothing but the notification count until then.
+When a stream starts while the box is sitting on its home screen, the receiver
+starts the screensaver immediately, so AmbientDream's now-playing panel is on
+the television within a moment. Before this the panel only appeared after
+`screen_off_timeout` — fifteen minutes here — and the stream played with
+nothing on screen but a notification count.
+
+It does this only from the home activity itself. If someone is in an app, or
+has the panel open (which is the launcher's too, so the check compares the
+full component, not the package), the screen is theirs and is left alone. If
+the screen is off, it stays off.
+
+Two details that cost a build each:
+
+- **DreamManager, not TvSettings' SLEEP intent.** The Screensaver tile uses
+  the intent because the panel is in the foreground. A background service may
+  not start activities, foreground service or not, so this calls
+  `IDreamManager.dream()`, which needs `WRITE_DREAM_STATE`; seeing another
+  app's activity needs `REAL_GET_TASKS`. Both are in a privapp allowlist of the
+  app's own, and **must** be: this build has
+  `ro.control_privapp_permissions=enforce`, under which a privileged app
+  requesting a privileged permission without an entry stops the device
+  booting, platform signature or not.
+- **No `isDreaming()`.** It needs a third permission, `READ_DREAM_STATE`, and
+  the first build threw on it. It is also unnecessary: since Android 12 a dream
+  runs as `DreamActivity` on top, so "home is in front" is already false while
+  dreaming.
+
+Verified on porg: from the home screen the dream started 18 ms after the
+stream; with the panel open, and inside Settings, nothing on screen changed
+and the stream played.
 
 ### Still to do
 

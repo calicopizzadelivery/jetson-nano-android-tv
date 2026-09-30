@@ -4,11 +4,15 @@
  */
 package org.lineageos.tv.airplay;
 
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -19,12 +23,18 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.IBinder;
+import android.os.PowerManager;
+import android.os.RemoteException;
+import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.service.dreams.DreamService;
+import android.service.dreams.IDreamManager;
 import android.text.TextUtils;
 import android.util.Log;
 
 import java.io.File;
+import java.util.List;
 
 /**
  * Runs the AirPlay receiver.
@@ -301,9 +311,13 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
 
     @Override
     public void onPlaying(boolean nowPlaying) {
+        final boolean started = nowPlaying && !playing;
         playing = nowPlaying;
         if (nowPlaying) {
             requestFocus();
+            if (started) {
+                showNowPlayingIfIdle();
+            }
         } else {
             abandonFocus();
             artwork = null;
@@ -312,6 +326,74 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         }
         publishState();
         updateNotification();
+    }
+
+    // ---- screen -----------------------------------------------------------
+
+    /**
+     * Put the now-playing panel on screen when a stream starts while the box
+     * is sitting on its home screen.
+     *
+     * AmbientDream is where the panel lives, and otherwise it only appears
+     * after the screensaver timeout -- fifteen minutes on this box -- so a
+     * stream started from a phone played with nothing on the television to
+     * say what it was. Starting the dream immediately fixes that. Only from
+     * the home screen itself: if someone is in an app, or has the panel open,
+     * the screen is theirs and is left alone.
+     *
+     * This calls DreamManager rather than firing TvSettings' SLEEP intent as
+     * the panel's Screensaver tile does: that is an activity start, and a
+     * background service may not start activities, foreground service or
+     * not. It needs WRITE_DREAM_STATE, and seeing another app's activity needs
+     * REAL_GET_TASKS; both are allowlisted in
+     * privapp_whitelist_org.lineageos.tv.airplay.xml, which this build
+     * enforces at boot.
+     */
+    private void showNowPlayingIfIdle() {
+        try {
+            final PowerManager power = getSystemService(PowerManager.class);
+            if (power == null || !power.isInteractive()) {
+                return; // asleep: waking the television for this would be rude
+            }
+            // Also covers "already dreaming": since Android 12 a dream runs as
+            // DreamActivity on top, so the home screen is not in front then.
+            // That saves asking isDreaming(), which needs READ_DREAM_STATE --
+            // a third privilege for a question already answered.
+            if (!homeIsInFront()) {
+                return;
+            }
+            final IDreamManager dreams = IDreamManager.Stub.asInterface(
+                    ServiceManager.getService(DreamService.DREAM_SERVICE));
+            if (dreams == null) {
+                return;
+            }
+            Log.i(TAG, "stream started on the home screen; showing the now-playing panel");
+            dreams.dream();
+        } catch (RemoteException | SecurityException e) {
+            Log.w(TAG, "could not start the screensaver", e);
+        }
+    }
+
+    /**
+     * The home activity itself, not merely the launcher's package: the
+     * panel is the launcher's too (SystemOptionsActivity), and a stream
+     * starting while it is open should not snatch it away.
+     */
+    private boolean homeIsInFront() {
+        final ResolveInfo home = getPackageManager().resolveActivity(
+                new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+                PackageManager.MATCH_DEFAULT_ONLY);
+        if (home == null || home.activityInfo == null) {
+            return false;
+        }
+        final List<ActivityManager.RunningTaskInfo> tasks =
+                getSystemService(ActivityManager.class).getRunningTasks(1);
+        if (tasks.isEmpty() || tasks.get(0).topActivity == null) {
+            return false;
+        }
+        final ComponentName top = tasks.get(0).topActivity;
+        return top.getPackageName().equals(home.activityInfo.packageName)
+                && top.getClassName().equals(home.activityInfo.name);
     }
 
     private void publishState() {

@@ -14,5 +14,20 @@ android_app {
     privileged: true,
     system_ext_specific: true,
 
-    required: ["shairport-sync"],
+    // The allowlist is not optional: this build sets
+    // ro.control_privapp_permissions=enforce, under which a privileged app
+    // requesting a privileged permission without an entry stops the device
+    // booting -- platform signature or not.
+    required: [
+        "shairport-sync",
+        "privapp_whitelist_org.lineageos.tv.airplay",
+    ],
+}
+
+prebuilt_etc {
+    name: "privapp_whitelist_org.lineageos.tv.airplay",
+    system_ext_specific: true,
+    sub_dir: "permissions",
+    src: "privapp_whitelist_org.lineageos.tv.airplay.xml",
+    filename_from_src: true,
 }

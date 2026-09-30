@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<permissions>
+    <privapp-permissions package="org.lineageos.tv.airplay">
+        <!-- Seeing whether the home screen is in front when a stream starts,
+             and if so starting the screensaver so the now-playing panel is on
+             the television. See AirPlayService.showNowPlayingIfIdle(). -->
+        <permission name="android.permission.REAL_GET_TASKS" />
+        <permission name="android.permission.WRITE_DREAM_STATE" />
+    </privapp-permissions>
+</permissions>
