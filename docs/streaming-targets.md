@@ -1,7 +1,8 @@
 # Streaming targets
 
-Making the box something other devices can point at. Audio first (AirPlay),
-then video (FCast), both bundled into the image.
+Making the box something other devices can point at, bundled into the image.
+AirPlay, mirroring and audio, is done: see **[airplay.md](airplay.md)**.
+Miracast is next once a Wi-Fi radio is fitted.
 
 ## What is and is not possible
 
@@ -10,19 +11,24 @@ licensor.
 
 | Protocol | Verdict |
 | --- | --- |
-| **AirPlay 1 audio (RAOP)** | Possible. Reverse-engineered, well-established, shairport-sync. **In progress.** |
-| **FCast** | Possible. Open protocol, open receiver. Next. |
+| **AirPlay mirroring and audio** | **Done** — UxPlay, hosted in `AirPlayReceiver`; see [airplay.md](airplay.md). Replaced shairport-sync on 30 September. |
+| AirPlay 1 audio (RAOP) | Was shairport-sync, below. UxPlay does not take classic `ANNOUNCE` senders, which only matters for non-Apple ones. |
+| FCast | Possible, and parked: it needs its own sender apps (no iOS), a second ecosystem rather than the devices people already have. |
 | **Bluetooth A2DP sink** | Possible and cheap — Android implements the whole profile, gated on one sysprop. Not started. |
 | **UPnP/DLNA renderer** | Possible. Kodi already does it; no platform work. |
-| AirPlay 2 | Possible but a different size of project — nqptp, libplist, ffmpeg. |
-| AirPlay mirroring (video) | Possible. UxPlay/RPiPlay solved the FairPlay handshake; the work is replacing GStreamer with MediaCodec. Months. |
+| AirPlay 2 multi-room | Not supported by UxPlay (no buffered audio or PTP). Shairport's AirPlay 2 build with nqptp would be the route, if it is ever wanted. |
 | **Google Cast** | **Dead.** The cast certificate is provisioned per device by a licensed OEM. |
-| Miracast sink | Not worth it. Never in AOSP (Android is a source only), needs Wi-Fi P2P autonomous GO, and our wifi is the least-proven part of the stack. |
+| **Miracast sink** | Wanted, once a radio is fitted: it is how Windows and many Android phones cast. Hard — never in AOSP (Android is a source only), needs Wi-Fi P2P, and our wifi is the least-proven part of the stack. |
 
 AirPlay here is a reverse-engineered implementation. Fine for a box you own;
 it cannot be described as AirPlay-compatible.
 
 ## Shairport Sync
+
+> **Superseded 30 September 2026 by UxPlay** ([airplay.md](airplay.md)). The
+> fork is still synced but no longer built. What follows is its history,
+> including findings that still apply (audio focus, the now-playing panel,
+> the privapp allowlist).
 
 `external/shairport-sync` and `external/popt`, both forks on
 `android-jetson-tv`, synced by the local manifest like everything else. Scope

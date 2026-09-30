@@ -96,8 +96,9 @@ docker-compose.yml         service, bind mounts, ulimits
 scripts/host-setup.sh      one-time root setup: docker, fstab mount, build dirs
 scripts/jetson-build       host driver: image/up/shell/sync/forks/extract/build
 scripts/in-container/*.sh  sync, extract, build, local-manifest, tree-local-changes
-scripts/in-container/local-manifest.xml   repo local manifest -> our four forks
+scripts/in-container/local-manifest.xml   repo local manifest -> our forks
 scripts/in-container/AmbientDream/        the screensaver, mirrored into vendor/
+scripts/in-container/AirPlayReceiver/     the AirPlay receiver (hosts UxPlay), ditto
 scripts/probe.sh           read-only host probe → probe-output.txt
 .devcontainer/             VS Code attach config
 ```
@@ -307,6 +308,31 @@ worth knowing before touching audio on this box again:
   that was silent: starting a stream wakes A2DP, and SBC silence costs the
   same bytes as signal.
 
+### AirPlay is UxPlay now (2026-09-30)
+
+Shairport was replaced the same day it started working, because the goal is
+screen mirroring from Macs and iPhones, not only audio. UxPlay's protocol
+library runs **inside `AirPlayReceiver`** over JNI (`external/uxplay`, with
+`external/libplist`); MediaCodec and AudioTrack do the rendering. Everything is
+in **`docs/airplay.md`**, including the licensing: GPLv3, with BoringSSL linked
+dynamically as the system crypto library. That was the user's explicit call,
+so do not reopen it.
+
+- **Not yet seen with a real Apple device.** Mirroring needs FairPlay, and no
+  open-source sender does it. UxPlay also refuses classic `ANNOUNCE`, so
+  `raopsend` and pyatv can no longer drive audio. Instead, a debug-only
+  **self-test** (`SELFTEST` action, modes `pcm` / `eld` / `music`) pushes a
+  test card and a tone through the real renderers. On porg all three were
+  clean on HDMI, with video 0.0 ms from due. The docs have a checklist for the
+  first iPhone/Mac session.
+- **To iterate without a flash:** `adb root && adb remount`, push the app dir
+  **and `/system/lib64/libuxplay_jni.so`** (the app's `lib/arm64` entry is
+  only a symlink to it), then reboot.
+- The ALAC decoder inherited from shairport could be driven to overrun the
+  heap by any device on the LAN. It is fixed and fuzzed in the fork.
+- The Shairport uid lesson below still stands for native audio clients, but
+  the receiver is now an ordinary app uid playing through AudioTrack.
+
 ### On-device findings (2026-09-25)
 
 **There is a root-capable shell on the serial console.** This is a userdebug
@@ -420,7 +446,10 @@ patched: `device/nvidia/porg`, `device/nvidia/tegra-common`,
 `kernel/nvidia/kernel-4.9`, `packages/apps/TvSettings`,
 `packages/apps/Catapult`, `vendor/lineage` — all under `calicopizzadelivery`,
 on `lineage-22.2-jetson-tv` except the kernel, which forks `lineage-22.2_4.9`
-and so is on `lineage-22.2_4.9-jetson-tv`.
+and so is on `lineage-22.2_4.9-jetson-tv`. Four more are projects LineageOS
+does not have, on `android-jetson-tv`: `external/uxplay` and
+`external/libplist` (in the image), and `external/shairport-sync` and
+`external/popt` (synced, no longer built).
 
 **`tree-local-changes.sh` no longer patches upstream repos.** The BT_LE
 defconfigs and the `wifi_loader.sh` fixes are commits on our forks now; that

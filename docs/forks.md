@@ -3,14 +3,30 @@
 Six LineageOS projects carry commits of ours. They live in forks under
 `calicopizzadelivery`:
 
-| Project in the tree | Fork | Branch | Commits |
+| Project in the tree | Fork | Branch | Commits (30 Sep) |
 | --- | --- | --- | --- |
-| `device/nvidia/porg` | `android_device_nvidia_porg` | `lineage-22.2-jetson-tv` | 2 |
+| `device/nvidia/porg` | `android_device_nvidia_porg` | `lineage-22.2-jetson-tv` | 8 |
 | `device/nvidia/tegra-common` | `android_device_nvidia_tegra-common` | `lineage-22.2-jetson-tv` | 1 |
 | `kernel/nvidia/kernel-4.9` | `android_kernel_nvidia_kernel` | `lineage-22.2_4.9-jetson-tv` | 1 |
 | `packages/apps/TvSettings` | `android_packages_apps_TvSettings` | `lineage-22.2-jetson-tv` | 2 |
-| `packages/apps/Catapult` | `android_packages_apps_Catapult` | `lineage-22.2-jetson-tv` | 3 |
+| `packages/apps/Catapult` | `android_packages_apps_Catapult` | `lineage-22.2-jetson-tv` | 6 |
 | `vendor/lineage` | `android_vendor_lineage` | `lineage-22.2-jetson-tv` | 1 |
+
+Four more are projects LineageOS does not have at all, added rather than
+substituted. Each is a fork of the upstream project with an Android build on
+`android-jetson-tv`:
+
+| Project in the tree | Fork of | From | In the image |
+| --- | --- | --- | --- |
+| `external/uxplay` | FDH2/UxPlay | v1.73.7 | yes: the AirPlay receiver ([airplay.md](airplay.md)) |
+| `external/libplist` | libimobiledevice/libplist | 2.7.0 | yes: UxPlay needs it |
+| `external/shairport-sync` | mikebrady/shairport-sync | after 5.5.2 | no longer; replaced by UxPlay |
+| `external/popt` | rpm-software-management/popt | after 1.19 | no longer; shairport's only |
+
+Shairport and popt are still synced so their history stays buildable; nothing
+in `PRODUCT_PACKAGES` names them. UxPlay (GPLv3) and libplist (LGPL) join the
+kernel as source that has to be published alongside any image we distribute;
+the licensing note in [airplay.md](airplay.md) has the reasoning.
 
 The kernel tracks `lineage-22.2_4.9` upstream rather than `lineage-22.2`, so its
 branch is named after the branch it forks. Its history is ~1.1 GB, but forking
@@ -87,6 +103,9 @@ That remote does not survive `local-manifest.sh` re-running: a manifest change
 moves the project to a different object directory and the remote goes with it.
 Re-adding it is harmless and idempotent enough to just do again.
 
+The four added projects use the branch `android-jetson-tv`, so for those it is
+`git push fork HEAD:refs/heads/android-jetson-tv`.
+
 Commits live on a detached HEAD, as everything under `repo` does. Keep a
 `jetson-tv` branch pointing at them (`git branch -f jetson-tv HEAD`) so they are
 referenced and cannot be garbage-collected between a commit and a push.
@@ -108,6 +127,6 @@ which is ours and is not a repo project at all.
 
 `repo status` across all 1141 projects now reports *"nothing to commit
 (working directory clean)"*. That is the point of the exercise: every change is
-either upstream, a commit on one of our six forks, or a file under
+either upstream, a commit on one of our forks, or a file under
 `vendor/jetson-tv`. Nothing depends on a script having run, and nothing is
 lost if the tree is wiped.
