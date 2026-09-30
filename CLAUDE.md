@@ -455,12 +455,12 @@ in `docs/game-streaming.md`. thebe's rootless capture (Xephyr and XShm)
 limits 4K; test 4K against a real gaming PC.
 
 **Third-party apps are pinned in `scripts/in-container/PrebuiltApps/apps.json`**
-(Moonlight 12.2 today). `prebuilt_apps.py` fetches them into `/dlcache` on
+(Moonlight 12.2 and Kodi 21.2 today). `prebuilt_apps.py` fetches them into `/dlcache` on
 every build, checks the SHA-256, and generates the modules. The APK goes in
 byte for byte so its own signature survives, and its JNI libraries are
 extracted beside it: a bundled app never has them extracted at install, so a
 compressed library otherwise fails to load at runtime. The reasoning, and how
-to add Kodi or anything else, is in `docs/prebuilt-apps.md`.
+to add anything else, is in `docs/prebuilt-apps.md`.
 
 **`docs/open-items.md` is the running list** of what is left to test or
 build, grouped by what it waits on: the radio, Apple hardware, other

@@ -83,10 +83,12 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     which the AirPlay paired-devices list uses. See `docs/emmc-writes.md`,
     "Power loss".
 18b. **Source mirrors for third-party apps, before any image is published.**
-    Moonlight (GPL-3.0) now ships in the image. Mirror moonlight-android at
-    v12.2 with its submodules, and do the same for each app added to
-    `PrebuiltApps/apps.json` (Kodi, if it goes in). See
-    `docs/prebuilt-apps.md`.
+    Moonlight (GPL-3.0) and Kodi (GPL-2.0-or-later) ship in the image. Mirror
+    moonlight-android at v12.2 with its submodules, and xbmc at 21.2-Omega
+    with its `tools/depends` tarballs. See `docs/prebuilt-apps.md`.
+18c. **Kodi's eMMC writes, once it has a real library:** thumbnails and its
+    SQLite databases. Use `scripts/emmc-*`. Also HEVC playback in Kodi, which
+    needs a clip made somewhere with an HEVC encoder.
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.

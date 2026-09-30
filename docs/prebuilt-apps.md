@@ -1,7 +1,17 @@
 # Third-party apps in the image
 
 Apps we do not build, shipped in every image as system apps under
-`/product/app`. As of 30 September 2026 that is **Moonlight 12.2**.
+`/product/app`. As of 30 September 2026:
+
+| App | Version | Licence | APK | On `/system` | Native libraries |
+| --- | --- | --- | --- | --- | --- |
+| Moonlight (`com.limelight`) | 12.2 | GPL-3.0 | 11 MB | 16 MB | 1 |
+| Kodi (`org.xbmc.kodi`) | 21.2 "Omega" | GPL-2.0-or-later | 65 MiB | 146 MB | 46 (`libkodi.so` alone is 79 MB) |
+
+With both, the image is 927 MB (817 MB without them), and `/system` has
+577 MB free. Kodi's digest is the one its mirror network publishes
+(`<apk>.sha256` on mirrors.kodi.tv); Moonlight's is GitHub's per-asset
+digest.
 
 ## How it works
 
@@ -48,7 +58,7 @@ build tree, like the NVIDIA blobs.
   `<uses-library>` tags (`aapt2 dump badging`), or Soong stops the build.
   Moonlight declares one optional library, `com.sec.android.app.multiwindow`.
 
-### Verified on porg (30 September)
+### Verified on porg (30 September): Moonlight
 
 After a full build and sideload, with no other copy installed:
 
@@ -60,6 +70,26 @@ After a full build and sideload, with no other copy installed:
   `UnsatisfiedLinkError` or `dlopen` failure in logcat.
 - The image grew by 14 MB (817 to 831 MB). `/system` had about 740 MB free
   before this.
+
+### Verified on porg (30 September): Kodi
+
+After a full build and sideload: Kodi runs from
+`/system/product/app/Kodi` (`SYSTEM`, `arm64-v8a`, signature v3, so the APK
+is untouched). It opens to its home screen on first run. H.264 test clips at
+1080p60 and 3840x2160p30 play on the hardware decoder: the player overlay
+shows `amc-h264(S) (HW)` with pixel format `Surface`, and the log shows
+`Using codec: OMX.Nvidia.h264.decode`. Audio (AAC, stereo) reached HDMI
+without gaps. HEVC was not tried: there is no x265 on thebe to make a clip.
+
+Two things about Kodi to know:
+
+- **Kodi has its own AirPlay server** (`libshairplay.so`, Settings > Services
+  > AirPlay). It is off by default. Turned on, it would advertise a second
+  AirPlay receiver next to ours, so leave it off. It is also audio-only and
+  older.
+- **Kodi writes a lot of small files once it has a library:** thumbnails,
+  and the SQLite databases for its library and textures. Measure it with
+  `scripts/emmc-*` after pointing it at a real library (RAIL).
 
 ## Adding or updating an app
 
@@ -79,9 +109,16 @@ Each app's licence text is fetched with it and attached to its modules, so
 it appears in the image's licence notices.
 
 **Before an image is published**, every GPL app in it needs its
-corresponding source offered alongside. For Moonlight (GPL-3.0) that is
-moonlight-android at `v12.2`, commit `b48494cb`, **with its submodules**
-(moonlight-common-c and its dependencies). Pointing at upstream is the
+corresponding source offered alongside:
+
+- **Moonlight (GPL-3.0):** moonlight-android at `v12.2`, commit `b48494cb`,
+  **with its submodules** (moonlight-common-c and its dependencies).
+- **Kodi (GPL-2.0-or-later):** xbmc at `21.2-Omega`, commit `d1a1d48c`,
+  **plus the third-party source tarballs** its Android build pulls in through
+  `tools/depends` (ffmpeg, Python and the rest). The APK carries their
+  binaries, so their source is part of the obligation. Pointing at upstream is the
 common practice, but the robust way is our own mirror (a fork at that tag),
 so the source stays available as long as we distribute the binary. That is
-on the RAIL list. Apps' trademark rules also apply: ship them unmodified.
+on the RAIL list. Apps' trademark rules also apply. Ship them unmodified, and for Kodi
+especially, with no third-party add-ons preinstalled: the Kodi Foundation's
+trademark policy is aimed at boxes sold "fully loaded".

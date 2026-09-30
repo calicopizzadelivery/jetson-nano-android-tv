@@ -26,6 +26,21 @@
       "optional_uses_libs": [
         "com.sec.android.app.multiwindow"
       ]
+    },
+    {
+      "name": "Kodi",
+      "package": "org.xbmc.kodi",
+      "version": "21.2",
+      "apk": {
+        "url": "https://mirrors.kodi.tv/releases/android/arm64-v8a/kodi-21.2-Omega-arm64-v8a.apk",
+        "sha256": "b23a0e7a3aad2674d9b3f1962fe60cbac9d711da474c521ba5d9ef2eed1763a1"
+      },
+      "license": {
+        "kind": "SPDX-license-identifier-GPL-2.0-or-later",
+        "url": "https://raw.githubusercontent.com/xbmc/xbmc/21.2-Omega/LICENSES/GPL-2.0-or-later",
+        "sha256": "8c0e6fe8979268b2509827f052ef1a87d5e203a8ddc12abd7362abac0820cddd"
+      },
+      "source": "https://github.com/xbmc/xbmc/tree/21.2-Omega (d1a1d48c3cb3722d39264ffdd8132f755ffecd27), plus the third-party tarballs tools/depends builds it with"
     }
   ]
 }
