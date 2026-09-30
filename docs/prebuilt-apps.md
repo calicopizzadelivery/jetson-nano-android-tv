@@ -7,9 +7,13 @@ Apps we do not build, shipped in every image as system apps under
 | --- | --- | --- | --- | --- | --- |
 | Moonlight (`com.limelight`) | 12.2 | GPL-3.0 | 11 MB | 16 MB | 1 |
 | Kodi (`org.xbmc.kodi`) | 21.2 "Omega" | GPL-2.0-or-later | 65 MiB | 146 MB | 46 (`libkodi.so` alone is 79 MB) |
+| Lemuroid (`com.swordfish.lemuroid`) | 1.17.0 | GPL-3.0 | 11 MB | 13 MB | 2 |
+| Jellyfin for Android TV (`org.jellyfin.androidtv`, module `JellyfinTV`) | 0.19.10 | GPL-2.0 | 21 MB | 23 MB | 2 |
 
-With both, the image is 927 MB (817 MB without them), and `/system` has
-577 MB free. Kodi's digest is the one its mirror network publishes
+With all four, the image is 978 MB (817 MB without them), and `/system` has
+about 490 MB free. Lemuroid downloads its emulator cores (libretro) when a
+game first needs one, so its size here does not grow with the systems it
+supports. Jellyfin is for users who run a Jellyfin server. Kodi's digest is the one its mirror network publishes
 (`<apk>.sha256` on mirrors.kodi.tv); Moonlight's is GitHub's per-asset
 digest.
 
@@ -91,6 +95,27 @@ Two things about Kodi to know:
   and the SQLite databases for its library and textures. Measure it with
   `scripts/emmc-*` after pointing it at a real library (RAIL).
 
+### Verified on porg (30 September): Lemuroid and Jellyfin
+
+Both run from `/system/product/app` as `SYSTEM`, `arm64-v8a`, signature v2.
+Jellyfin opens to its connect screen ("No servers found on local network",
+as expected). Lemuroid opens to its TV home, and **choosing a games folder
+works**, but only because of two fixes this needed:
+
+- **DocumentsUI is now in the image** (`jetson-tv.mk`). Lemuroid asks for a
+  folder with `OPEN_DOCUMENT_TREE`. TV builds leave DocumentsUI out and
+  install `TvFrameworkPackageStubs`, whose `DocumentsStub` claims that intent
+  (priority 99) and does nothing, so no folder ever came back. DocumentsUI
+  claims the same intents at priority 100 and wins. Verified: Directory ->
+  the picker -> `ROMs` -> Use this folder -> Allow, and Lemuroid saved
+  `content://com.android.externalstorage.documents/tree/primary%3AROMs`. It
+  also puts a "Files" tile on the home screen, a basic file browser.
+- **The launcher showed Lemuroid twice**, because it has separate TV and
+  phone activities. Catapult/0009 skips an app's phone launcher when the
+  package has a TV one.
+
+Games themselves are untested: no ROM was loaded.
+
 ## Adding or updating an app
 
 Add an entry to `apps.json`, or change the version, URL and both digests. Get
@@ -113,6 +138,11 @@ corresponding source offered alongside:
 
 - **Moonlight (GPL-3.0):** moonlight-android at `v12.2`, commit `b48494cb`,
   **with its submodules** (moonlight-common-c and its dependencies).
+- **Lemuroid (GPL-3.0):** Lemuroid at `1.17.0`, commit `4266d373`. The
+  libretro cores it downloads are distributed by their own projects, not by
+  us.
+- **Jellyfin for Android TV (GPL-2.0):** jellyfin-androidtv at `v0.19.10`,
+  commit `984181a3`.
 - **Kodi (GPL-2.0-or-later):** xbmc at `21.2-Omega`, commit `d1a1d48c`,
   **plus the third-party source tarballs** its Android build pulls in through
   `tools/depends` (ffmpeg, Python and the rest). The APK carries their

@@ -336,6 +336,17 @@ side padding instead of the button default.
 **Status**: verified on porg by HDMI capture. Every title and status is on
 its own line, and focused tiles at either edge are unclipped.
 
+## Catapult/0009 — one tile per app
+
+Installed apps come from both LEANBACK_LAUNCHER and LAUNCHER, folded by the
+activity each resolves to. That folded apps whose TV and phone entry points
+are the same activity, but not ones with a separate phone activity: Lemuroid
+showed twice, the second tile opening its touch interface. The LAUNCHER entry
+is now left out when the same package has a LEANBACK_LAUNCHER one; apps with
+only a phone launcher are unaffected.
+
+**Status**: verified on porg: one Lemuroid tile. Upstreamable as-is.
+
 ## porg/0003 — label shairport-sync by its real path
 
 porg has no separate system_ext partition; `/system_ext` is a symlink to

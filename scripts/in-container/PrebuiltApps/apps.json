@@ -41,6 +41,44 @@
         "sha256": "8c0e6fe8979268b2509827f052ef1a87d5e203a8ddc12abd7362abac0820cddd"
       },
       "source": "https://github.com/xbmc/xbmc/tree/21.2-Omega (d1a1d48c3cb3722d39264ffdd8132f755ffecd27), plus the third-party tarballs tools/depends builds it with"
+    },
+    {
+      "name": "Lemuroid",
+      "package": "com.swordfish.lemuroid",
+      "version": "1.17.0",
+      "apk": {
+        "url": "https://github.com/Swordfish90/Lemuroid/releases/download/1.17.0/lemuroid-app-free-dynamic-release.apk",
+        "sha256": "d44cfa0cdc3e43fd91df97f625938366ccef9793b06a80b9e6fad97a6cd88e51"
+      },
+      "license": {
+        "kind": "SPDX-license-identifier-GPL-3.0",
+        "url": "https://raw.githubusercontent.com/Swordfish90/Lemuroid/1.17.0/COPYING",
+        "sha256": "27116fdf9e6118487959d5a9c5d7bfab12e9ab131c235b2ef97469a5dc6c86a5"
+      },
+      "source": "https://github.com/Swordfish90/Lemuroid/tree/1.17.0 (4266d3736b833f2fc75e0be9235a042bec53ae0a); the libretro cores it downloads at runtime come from their own projects",
+      "optional_uses_libs": [
+        "androidx.window.extensions",
+        "androidx.window.sidecar"
+      ]
+    },
+    {
+      "name": "JellyfinTV",
+      "package": "org.jellyfin.androidtv",
+      "version": "0.19.10",
+      "apk": {
+        "url": "https://github.com/jellyfin/jellyfin-androidtv/releases/download/v0.19.10/jellyfin-androidtv-v0.19.10-release.apk",
+        "sha256": "8510a517c99927076082917f41bf306dd7a2546c59d492dd11bde18d6e2e4628"
+      },
+      "license": {
+        "kind": "SPDX-license-identifier-GPL-2.0",
+        "url": "https://raw.githubusercontent.com/jellyfin/jellyfin-androidtv/v0.19.10/LICENSE",
+        "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+      },
+      "source": "https://github.com/jellyfin/jellyfin-androidtv/tree/v0.19.10 (984181a3d6ab14e9a6d2dcc850c582e1c138bd95)",
+      "optional_uses_libs": [
+        "androidx.window.extensions",
+        "androidx.window.sidecar"
+      ]
     }
   ]
 }

@@ -83,12 +83,18 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     which the AirPlay paired-devices list uses. See `docs/emmc-writes.md`,
     "Power loss".
 18b. **Source mirrors for third-party apps, before any image is published.**
-    Moonlight (GPL-3.0) and Kodi (GPL-2.0-or-later) ship in the image. Mirror
-    moonlight-android at v12.2 with its submodules, and xbmc at 21.2-Omega
-    with its `tools/depends` tarballs. See `docs/prebuilt-apps.md`.
+    Moonlight (GPL-3.0), Kodi (GPL-2.0-or-later), Lemuroid (GPL-3.0) and
+    Jellyfin for Android TV (GPL-2.0) ship in the image. Mirror each at its
+    pinned tag: moonlight-android with its submodules, xbmc with its
+    `tools/depends` tarballs. See `docs/prebuilt-apps.md`.
 18c. **Kodi's eMMC writes, once it has a real library:** thumbnails and its
     SQLite databases. Use `scripts/emmc-*`. Also HEVC playback in Kodi, which
     needs a clip made somewhere with an HEVC encoder.
+18d. **The box calls itself "SHIELD Android TV".** That is the default device
+    name (foster's SettingsProvider overlay, `def_device_name_simple`) and
+    Bluetooth name (`bluetooth.device.default_name`), so it is what other
+    devices and the file picker show, while AirPlay says "Jetson TV". A porg
+    overlay and prop should set our own.
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.

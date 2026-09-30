@@ -1,0 +1,44 @@
+From 656837320c548f5ca87cedcf5f94135d2465f4de Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 18:22:00 -0500
+Subject: [PATCH] One tile per app: skip the phone launcher when there is a TV
+ one
+
+Installed apps are gathered from both LEANBACK_LAUNCHER and LAUNCHER
+and folded together by the activity each resolves to. That folds an app
+whose TV and phone entry points are the same activity, but not one that
+has a separate phone activity: Lemuroid showed twice, and its second
+tile opened the touch interface. An app's LAUNCHER activity is now left
+out when the same package has a LEANBACK_LAUNCHER one. Apps with only a
+phone launcher are shown as before.
+
+Change-Id: I5b8e2d4f6a1c3e7b9d0f2a4c6e8b1d3f5a7c9e02
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../org/lineageos/tv/launcher/flow/InstalledAppsFlow.kt    | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/flow/InstalledAppsFlow.kt b/app/src/main/java/org/lineageos/tv/launcher/flow/InstalledAppsFlow.kt
+index a33b158..c5e25c8 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/flow/InstalledAppsFlow.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/flow/InstalledAppsFlow.kt
+@@ -46,10 +46,15 @@ class InstalledAppsFlow(private val context: Context) {
+                 .mapNotNull { resolveInfo ->
+                     LeanbackAppInfo(resolveInfo, context)
+                 }
++        // An app with a TV entry point is shown by that alone. Apps whose TV
++        // and phone launchers are the same activity were already folded
++        // together below; an app that has a separate phone activity (Lemuroid,
++        // for one) otherwise got a second tile opening its touch interface.
++        val leanbackPackages = leanbackLauncherActivities.map { it.packageName }.toSet()
+         val launcherActivities =
+             packageManager.queryIntentActivities(launcherIntent, 0).mapNotNull { resolveInfo ->
+                 AppInfo(resolveInfo, context)
+-            }
++            }.filter { it.packageName !in leanbackPackages }
+ 
+         (leanbackLauncherActivities + launcherActivities).distinctBy {
+             it.launchIntent?.resolveActivityInfo(
+-- 
+2.43.0
+

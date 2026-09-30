@@ -455,7 +455,7 @@ in `docs/game-streaming.md`. thebe's rootless capture (Xephyr and XShm)
 limits 4K; test 4K against a real gaming PC.
 
 **Third-party apps are pinned in `scripts/in-container/PrebuiltApps/apps.json`**
-(Moonlight 12.2 and Kodi 21.2 today). `prebuilt_apps.py` fetches them into `/dlcache` on
+(Moonlight, Kodi, Lemuroid and Jellyfin today). `prebuilt_apps.py` fetches them into `/dlcache` on
 every build, checks the SHA-256, and generates the modules. The APK goes in
 byte for byte so its own signature survives, and its JNI libraries are
 extracted beside it: a bundled app never has them extracted at install, so a
