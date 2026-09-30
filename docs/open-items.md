@@ -1,7 +1,7 @@
-# Open items
+# Open items (RAIL)
 
-The running list of what is still to test or build, grouped by what it is
-waiting on. Each item points at the document with the detail. When one closes,
+The running action item list (RAIL): what is still to test or build, grouped
+by what it is waiting on. Each item points at the document with the detail. When one closes,
 move its result into that document and strike it here.
 
 Last reviewed 30 September 2026.
@@ -74,9 +74,14 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 17. **Shairport leftovers** in the porg fork: the `shairport` SELinux domain,
     uid 7500, and the `interrupt` property label.
 18. **eMMC write reduction.** See `docs/emmc-writes.md`.
-18a. **Write barriers on /data**, for routine power pulls. Measured cost:
-    about 1-1.5 ms per fsync. Planned as porg shipping its own fstab. See
-    `docs/emmc-writes.md`, "Power loss".
+18a. **Write barriers on /data**, for routine power pulls. *Shelved 30
+    September.* Measured cost: about 1-1.5 ms per fsync. The plan: porg ships
+    its own fstab with `barrier=1`, drops `noauto_da_alloc`, and checks
+    `/cache` at boot. First, a relay-controller power-pull test to see whether
+    this eMMC ever corrupts with barriers off, or only loses its last writes.
+    Barriers do not help asynchronous saves such as `SharedPreferences.apply()`,
+    which the AirPlay paired-devices list uses. See `docs/emmc-writes.md`,
+    "Power loss".
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.
