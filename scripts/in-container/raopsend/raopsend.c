@@ -44,6 +44,7 @@
 #include <errno.h>
 #include <math.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -219,17 +220,37 @@ static int send_progress(uint32_t start, uint32_t now, uint32_t end, char *respo
 
 /* ----------------------------------------------------------------- audio -- */
 
-/* Answer the receiver's timing requests. Without them the player waits for
-   clock sync and never starts. */
-static void service_timing(int fd) {
+/*
+ * Answer the receiver's timing requests. Without them the player waits for
+ * clock sync and never starts.
+ *
+ * This has to be its own thread, and that is not a tidiness point. Polling the
+ * timing socket from inside the audio loop replies only at the next packet
+ * boundary, so the round trip a receiver measures is not the real one: it is
+ * however long is left of the current 8 ms packet. Shairport-sync estimates
+ * the clock offset by *filtering on round-trip time*, so a reply delay that
+ * sawtooths from 0 to 8 ms makes every sample look different and it rejects
+ * them all -- "not enough samples to estimate drift -- remaining at 0.00 ppm",
+ * forever. The player then never learns when to play, sits in
+ * buffer_get_frame() and emits nothing at all, with any backend.
+ *
+ * The symptom is silence with a healthy-looking session: RTSP succeeds, the
+ * packets arrive, the output stream opens and starts, and not one frame is
+ * ever written to it.
+ */
+static void *timing_thread(void *arg) {
+  const int fd = *(int *)arg;
   uint8_t packet[256];
   struct sockaddr_in from;
   socklen_t from_len = sizeof(from);
   for (;;) {
-    ssize_t n = recvfrom(fd, packet, sizeof(packet), MSG_DONTWAIT,
+    /* Blocking, so the reply goes out as soon as the request lands. */
+    ssize_t n = recvfrom(fd, packet, sizeof(packet), 0,
                          (struct sockaddr *)&from, &from_len);
+    if (n < 0)
+      return NULL;
     if (n < 8)
-      return; /* EAGAIN, or nothing useful */
+      continue;
     if ((packet[1] & 0x7F) != 82) /* 82: timing request */
       continue;
 
@@ -252,6 +273,7 @@ static void service_timing(int fd) {
     memcpy(reply + 28, &frac, 4);
     sendto(fd, reply, sizeof(reply), 0, (struct sockaddr *)&from, from_len);
   }
+  return NULL;
 }
 
 static int bind_udp(int *port) {
@@ -406,6 +428,13 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  pthread_t timing_tid;
+  if (pthread_create(&timing_tid, NULL, timing_thread, &timing_fd) != 0) {
+    fprintf(stderr, "could not start the timing thread: %s\n", strerror(errno));
+    return 1;
+  }
+  pthread_detach(timing_tid);
+
   char response[4096];
   if (rtsp_exchange("OPTIONS", NULL, NULL, NULL, 0, response, sizeof(response)) != 0)
     return 1;
@@ -496,7 +525,6 @@ int main(int argc, char **argv) {
     sendto(audio_fd, packet, sizeof(packet), 0, (struct sockaddr *)&audio_addr,
            sizeof(audio_addr));
     timestamp += FRAMES_PER_PACKET;
-    service_timing(timing_fd);
 
     if (want_metadata && second_track && !swapped_track && timestamp >= total_frames / 2) {
       swapped_track = 1;

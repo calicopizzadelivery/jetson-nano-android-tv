@@ -267,6 +267,27 @@ one capture stream is held open across the whole sequence. See the HPD note in
 `jetson-flash-node/tools/hdmi.py`; it is the single most misleading failure
 mode on this bench.
 
+### Driving a flash headlessly (2026-09-30)
+
+`adb reboot sideload` puts the device straight into sideload mode without
+touching the recovery menu, which removes the FRDM-K64F and the MS2109 from the
+loop for the install itself. Two things still bite:
+
+- **adb in recovery is `unauthorized`** and there is no way to accept the
+  prompt headlessly, so `adb reboot` cannot bring it back out. Either use
+  `adb reboot sideload-auto-reboot` in the first place, or power-cycle out of
+  the finished install — the BCB is cleared once the install completes, so a
+  cold boot goes to the system.
+- **The host adb server and the `adbnode` container fight for the USB claim.**
+  The device shows up in neither until one of them lets go: `adb kill-server`
+  on the host, then `adb kill-server && adb start-server` in the container.
+  Starting a host adb server for the emulator is enough to cause it.
+
+Recovery had already decided there was no display by the time the capture
+stream raised HPD, so its menu was unreadable — colour bars only. See the HPD
+note in `jetson-flash-node/tools/hdmi.py`: to see anything, hold one capture
+stream open and power-cycle *into* it.
+
 ### On-device findings (2026-09-25)
 
 **There is a root-capable shell on the serial console.** This is a userdebug

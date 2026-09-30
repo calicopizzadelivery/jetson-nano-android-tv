@@ -340,10 +340,97 @@ moving smoothly rather than stepping.
 A session with no title is ignored rather than drawn: a game's background
 music should leave the photograph alone.
 
+### Two defects only hardware could find, 30 September
+
+Both were invisible to the emulator for the same reason: there the daemon is
+started by hand, so nothing ever exercised init.
+
+**The exec label.** Fixed and confirmed — `init.svc.shairport-sync` now reports
+a state instead of nothing, so init does transition the binary into the
+`shairport` domain, `/data/misc/airplay` is created, and there are no denials
+anywhere in the boot log. See the 30 September note above for why listing both
+`/system/system_ext/...` and `/system_ext/...` is what it took.
+
+**init tokenises before it expands.** The next failure in line, and a much
+better disguise:
+
+    F init: cannot expand arguments: unexpected end of string in
+            '${persist.jetsontv.airplay.name:-Jetson', looking for }
+    I init: Service 'shairport-sync' (pid 5641) exited with status 6
+
+The service line carried `--name ${persist.jetsontv.airplay.name:-Jetson TV}`.
+init splits the line into arguments *first* and expands each one after, so the
+default value's space ended it: the first token is a `${` with no `}` and
+expansion fails. The service exited on every start and init restarted it
+forever.
+
+What made it hard to see from outside: `getprop init.svc.shairport-sync` says
+`running` in the gap between attempts, so it reads as a daemon that is up but
+not listening. `connect: Connection refused` from `raopsend` on loopback was
+the first honest symptom. The giveaway in `getprop` is `restarting` rather than
+`running`, which you only catch if you look at the right moment; the init log
+says it plainly every time.
+
+Quoting the whole expansion keeps it one token, and `${x:-default}` expands
+normally after that — `tokenizer.cpp` treats a `"` run as a single token
+including spaces, and `ExpandProps` runs per argument afterwards.
+
+Two habits worth keeping from this:
+
+- **A defect in an init `.rc` cannot be found by running the binary by hand.**
+  Anything only init parses — argument expansion, `seclabel`, the user and
+  group list, the trigger — needs a device.
+- **Read `init.svc.<name>` more than once.** A crash loop and a healthy daemon
+  look identical in a single sample.
+
+### Audio does not yet reach the speakers, and where it stops
+
+The receiver runs on porg and the metadata path is proven, but no stream has
+yet produced sound. What the bench has ruled out, each by measurement:
+
+- **Not the box's HDMI audio.** Android's own UI click sounds record cleanly
+  off the MS2109's ALSA capture (`arecord -D plughw:2,0`), and AudioFlinger's
+  only output thread is `AUDIO_DEVICE_OUT_HDMI` with master volume 1.0 and
+  nothing muted. That also settles the long-standing "HDMI audio" item for
+  2-channel LPCM, though not for bitstream passthrough.
+- **Not SELinux.** Permissive changes nothing, and there are no denials.
+- **Not our AAudio backend.** The daemon reports
+  `aaudio: started 2 channels at 44100 fps`, and AudioFlinger shows the track
+  created and in state A — with `FrmRdy 0`, meaning not one frame was ever
+  written to it. Running the same daemon with `-o stdout` produces a
+  zero-length file, so the silence survives replacing the backend entirely.
+- **Not `raopsend`'s recent changes.** The pre-change sender, rebuilt from
+  `858597c`, behaves identically.
+- **Not porg.** The emulator now behaves identically too.
+
+Where it actually stops: `debuggerd -b` on the daemon shows the player thread
+parked in `player_thread_func` on a `pthread_cond_timedwait` — inside
+`buffer_get_frame()`, waiting for a frame to become due. Packets are arriving
+(the RTP receiver threads are in `recvfrom`, and shairport's own stats report
+2,500 packets at the expected 7,982 µs spacing), the session reaches
+`player_play`, `Play begin` and `synced by first packet, timestamp 0, seqno 0`
+— and then nothing is ever scheduled.
+
+The likeliest remaining cause is that **`raopsend` never sends RTP SYNC
+packets**. A real sender emits one on the control port about once a second,
+carrying the mapping from RTP timestamp to NTP time, and that is what tells
+the player when each frame is due. Shairport's "synced by first packet"
+fallback covers the absence well enough to start a session but perhaps not to
+schedule one. That is the next thing to implement and test.
+
+**One defect found and fixed on the way.** The timing responder was polled once
+per audio packet from inside the send loop, so a reply went out only at the
+next packet boundary and the round trip a receiver measured sawtoothed from 0
+to 8 ms on *loopback*. Shairport filters clock samples by round-trip time, so
+it rejected all of them — "not enough samples to estimate drift — remaining at
+0.00 ppm", forever. The responder is now its own thread blocking on `recvfrom`,
+and the measured round trips are a steady 0.17–0.31 ms with no rejected
+samples. That was not the whole story, but it was wrong.
+
 ### Still to do
 
-1. **Verify on hardware.** Everything above is proven on the emulator; the
-   next porg flash is what tests the sepolicy, `patches/porg/0003` included.
+1. **Make a stream audible**, starting with RTP SYNC packets in `raopsend` —
+   see the section above for everything already ruled out.
 2. **FCast**, for video.
 3. **Bonjour advertisement.** The daemon uses the bundled tinysvcmdns; nothing
    has yet confirmed a real iOS sender discovers the box by itself, as opposed
