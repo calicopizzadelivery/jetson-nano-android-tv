@@ -318,7 +318,9 @@ in **`docs/airplay.md`**, including the licensing: GPLv3, with BoringSSL linked
 dynamically as the system crypto library. That was the user's explicit call,
 so do not reopen it.
 
-- **Not yet seen with a real Apple device.** Mirroring needs FairPlay, and no
+- **Not yet seen with a real Apple device — come back to this when one is
+  available.** It is the first item under "Still to do" in
+  `docs/airplay.md`, with the checklist. Mirroring needs FairPlay, and no
   open-source sender does it. UxPlay also refuses classic `ANNOUNCE`, so
   `raopsend` and pyatv can no longer drive audio. Instead, a debug-only
   **self-test** (`SELFTEST` action, modes `pcm` / `eld` / `music`) pushes a

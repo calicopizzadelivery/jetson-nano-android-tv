@@ -116,6 +116,18 @@ against crafted frames`):
 4. The bit reader has no end. The bridge now copies each frame into a
    zero-padded buffer sized so that no frame can read out of it.
 
+Two handshake bugs came up in the same review, fixed in `Bound the fp-setup
+mode, and the SETUP ekey and eiv sizes`. The `fp-setup` mode byte indexed a
+four-entry table unchecked, which would echo back up to 36 KB of memory.
+`SETUP` copied fixed lengths out of a client-sized `ekey` and `eiv`.
+
+Still open, noted while reading the stream code, for a later hardening pass.
+The mirroring codec packet (SPS/PPS, and the H.265 VPS/SPS/PPS) takes its
+parameter-set lengths from the stream without checking them against the
+packet. A request carrying `X-Apple-Session-ID` on an RTSP connection reaches
+an `assert` on a null string. Both need a paired client, but pairing needs no
+PIN.
+
 `android/tests/alac_check.c` in the fork decodes a verbatim stereo frame
 (bit-exact) and then fuzzes the decoder under AddressSanitizer. The unhardened
 decoder hits a heap-buffer-overflow within seconds; the hardened one ran
@@ -256,7 +268,16 @@ rejects the stale ones and runs the app interpreted.
 
 ## Still to do
 
-1. **An iPhone or Mac session**, using the checklist above.
+1. **Validate with real Apple hardware — the open item for this whole
+   receiver.** Everything so far runs without a sender: the self-test drives
+   the renderers, and the protocol side is known only to start, advertise and
+   answer `GET /info`. Pairing, FairPlay, decryption, the clock sync, and the
+   lip sync between an Apple sender's audio and video timestamps have never
+   met a real device. When an iPhone, iPad or Mac is available (a Mac is not
+   required: an iPhone alone can mirror from Control Center), run the
+   checklist in "Testing with an iPhone or Mac" above. Record the `video:`
+   and `audio:` timing lines, and whether speech is in sync. Until then, treat
+   the AirPlay feature as unproven.
 2. **An optional PIN**, for networks where "anyone on the LAN" is too open.
 3. **Clean up after Shairport** in the porg fork: the `shairport` SELinux
    domain, the `system_ext_airplay` uid (7500) in `config.fs` and the
