@@ -13,9 +13,10 @@ Apps we do not build, shipped in every image as system apps under
 With all four, the image is 978 MB (817 MB without them), and `/system` has
 about 490 MB free. Lemuroid downloads its emulator cores (libretro) when a
 game first needs one, so its size here does not grow with the systems it
-supports. Jellyfin is for users who run a Jellyfin server. Kodi's digest is the one its mirror network publishes
-(`<apk>.sha256` on mirrors.kodi.tv); Moonlight's is GitHub's per-asset
-digest.
+supports. Jellyfin is for users who run a Jellyfin server.
+
+Kodi's digest is the one its mirror network publishes (`<apk>.sha256` on
+mirrors.kodi.tv); the others' are GitHub's per-asset digests.
 
 ## How it works
 
