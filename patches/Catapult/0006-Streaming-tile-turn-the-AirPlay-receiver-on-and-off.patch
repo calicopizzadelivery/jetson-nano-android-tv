@@ -1,0 +1,289 @@
+From be361b4ad57f1b61ad5ee5d3559569c6cdde0caf Mon Sep 17 00:00:00 2001
+From: flippy <flippy@thebe.tail087954.ts.net>
+Date: Tue, 29 Sep 2026 20:19:01 -0500
+Subject: [PATCH] Streaming tile: turn the AirPlay receiver on and off
+
+The panel had no way to reach the receiver at all -- it was enabled by
+setting a system property by hand over adb, which is not something a
+viewer can do. The tile shows what the box is advertising as a streaming
+target and offers a switch per target.
+
+Toggling one starts or stops its *service* rather than writing the
+property here, even though this package is allowed to write it. The
+property is only what init watches to run the daemon; the service is
+what holds audio focus and turns the daemon's metadata into a
+MediaSession. A daemon started without it would play over whatever else
+is on and put nothing on screen, so the two have to move together. The
+service sets the property once it is up, which is why the property is
+still what the tile reads back.
+
+Three details worth keeping:
+
+- The receivers are separate packages, so the tile resolves each
+  service before offering it and hides itself when none is installed.
+  That keeps this fork buildable on a tree without them.
+
+- startService, not startForegroundService. The panel is on screen, so
+  the background-start restriction does not apply, and
+  startForegroundService is actively wrong for the stop case: it
+  promises a startForeground() that a service shutting itself down
+  never makes, and the platform kills it for the broken promise.
+
+- The tile is re-read in onResume, not only when the panel opens. The
+  receiver can also stop from outside the panel -- losing audio focus
+  does it -- and the summary would otherwise go stale.
+
+The second slot in the row is left empty for the video receiver.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I8a8dfe4580e60d6cffd6fdcbc4430fd7941cea29
+---
+ .../tv/launcher/SystemOptionsActivity.kt      | 117 ++++++++++++++++++
+ app/src/main/res/drawable/ic_cast.xml         |  15 +++
+ .../res/layout/activity_system_options.xml    |  25 ++++
+ app/src/main/res/values/strings.xml           |   8 ++
+ 4 files changed, 165 insertions(+)
+ create mode 100644 app/src/main/res/drawable/ic_cast.xml
+
+diff --git a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+index baf0588..af3e33f 100644
+--- a/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
++++ b/app/src/main/java/org/lineageos/tv/launcher/SystemOptionsActivity.kt
+@@ -17,6 +17,7 @@ import android.bluetooth.BluetoothA2dp
+ import android.media.AudioDeviceInfo
+ import android.media.AudioDeviceCallback
+ import android.media.AudioManager
++import android.content.ComponentName
+ import android.content.Intent
+ import android.icu.text.DateFormat
+ import android.net.ConnectivityManager
+@@ -33,6 +34,7 @@ import android.provider.Settings
+ import android.service.notification.StatusBarNotification
+ import android.text.SpannableString
+ import android.util.Log
++import android.os.SystemProperties
+ import android.view.Gravity
+ import android.view.KeyEvent
+ import android.view.View
+@@ -78,6 +80,7 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+     private val noNotificationsTextView by lazy { findViewById<TextView>(R.id.noNotificationsTextView)!! }
+     private val notificationsVerticalGridView by lazy { findViewById<VerticalGridView>(R.id.notificationsVerticalGridView)!! }
+     private val panelShortcutTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.panelShortcutTwoLineButton)!! }
++    private val streamingTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.streamingTwoLineButton)!! }
+     private val powerMaterialButton by lazy { findViewById<MaterialButton>(R.id.powerMaterialButton)!! }
+     private val screensaverTwoLineButton by lazy { findViewById<TwoLineButton>(R.id.screensaverTwoLineButton)!! }
+     private val settingsButton by lazy { findViewById<MaterialButton>(R.id.settingsMaterialButton)!! }
+@@ -154,6 +157,7 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         setAccessibilityButton()
+         setScreensaverButton()
+         setAudioOutputButton()
++        setStreamingButton()
+ 
+         getSystemService(BluetoothManager::class.java)?.adapter
+             ?.getProfileProxy(this, a2dpListener, BluetoothProfile.A2DP)
+@@ -276,6 +280,10 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+ 
+     override fun onResume() {
+         super.onResume()
++        // The receiver can also be turned off from outside the panel -- by
++        // losing audio focus, for one -- so re-read rather than trusting what
++        // was painted when the panel opened.
++        setStreamingButton()
+         if (NotificationUtils.notificationPermissionGranted(this)) {
+             noNotificationAccessLinearLayout.visibility = View.GONE
+         } else {
+@@ -683,6 +691,115 @@ class SystemOptionsActivity : ModalActivity(R.layout.activity_system_options),
+         }
+     }
+ 
++    /**
++     * A receiver another device can stream to.
++     *
++     * Toggling one starts or stops its *service* rather than writing
++     * [enabledProp] here. The property is only what init watches to run the
++     * daemon; the service is what holds audio focus and turns the daemon's
++     * metadata into a MediaSession, and a daemon running without it would play
++     * over whatever else is on and show nothing on screen. The service sets
++     * the property itself once it is up, which is why the property is still
++     * what this reads back.
++     */
++    private data class StreamingTarget(
++        val labelRes: Int,
++        val enabledProp: String,
++        val service: ComponentName,
++        val startAction: String,
++        val stopAction: String,
++    )
++
++    private val streamingTargets = listOf(
++        StreamingTarget(
++            R.string.streaming_airplay,
++            "persist.jetsontv.airplay.enabled",
++            ComponentName(
++                "org.lineageos.tv.airplay",
++                "org.lineageos.tv.airplay.AirPlayService"
++            ),
++            "org.lineageos.tv.airplay.START",
++            "org.lineageos.tv.airplay.STOP",
++        ),
++    )
++
++    /**
++     * Only the ones this build actually ships. The receivers are separate
++     * packages, so on a build without them the tile has nothing to offer and
++     * hides rather than listing switches that would do nothing.
++     */
++    private fun installedStreamingTargets() = streamingTargets.filter {
++        packageManager.resolveService(Intent(it.startAction).setComponent(it.service), 0) != null
++    }
++
++    private fun isStreamingTargetOn(target: StreamingTarget) =
++        SystemProperties.getBoolean(target.enabledProp, false)
++
++    private fun setStreamingButton() {
++        val targets = installedStreamingTargets()
++        if (targets.isEmpty()) {
++            streamingTwoLineButton.visibility = View.GONE
++            return
++        }
++        streamingTwoLineButton.visibility = View.VISIBLE
++
++        val on = targets.filter { isStreamingTargetOn(it) }
++        val status = when {
++            on.isEmpty() -> resources.getString(R.string.streaming_off)
++            // One is the common case, and its name is more use than "1 on".
++            on.size == 1 -> resources.getString(on.first().labelRes)
++            else -> resources.getQuantityString(
++                R.plurals.streaming_targets_on, on.size, on.size
++            )
++        }
++
++        streamingTwoLineButton.setSpan(
++            SpannableString(resources.getString(R.string.streaming_status, status))
++        )
++
++        streamingTwoLineButton.setOnClickListener { showStreamingTargets() }
++    }
++
++    private fun showStreamingTargets() {
++        val targets = installedStreamingTargets()
++        val labels = targets.map { resources.getString(it.labelRes) }.toTypedArray()
++        val checked = targets.map { isStreamingTargetOn(it) }.toBooleanArray()
++
++        val dialog = AlertDialog.Builder(this)
++            .setTitle(R.string.streaming_title)
++            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
++                applyStreamingTarget(targets[which], isChecked)
++            }
++            .setPositiveButton(android.R.string.ok, null)
++            .create()
++
++        dialog.window?.let { window ->
++            window.attributes = window.attributes.apply { gravity = Gravity.END }
++            window.setLayout(
++                resources.getDimensionPixelSize(R.dimen.audio_output_dialog_width),
++                WindowManager.LayoutParams.WRAP_CONTENT
++            )
++        }
++        dialog.setOnDismissListener { setStreamingButton() }
++        dialog.show()
++    }
++
++    /**
++     * startService, not startForegroundService: the panel is on screen, so the
++     * app is in the foreground and the background-start restriction does not
++     * apply. startForegroundService would also be wrong for the stop case --
++     * it promises a startForeground() that a service shutting itself down
++     * never makes, and the platform kills it for the broken promise.
++     */
++    private fun applyStreamingTarget(target: StreamingTarget, enable: Boolean) {
++        val action = if (enable) target.startAction else target.stopAction
++        try {
++            startService(Intent(action).setComponent(target.service))
++        } catch (e: RuntimeException) {
++            Log.e(LOG_TAG, "could not $action ${target.service.packageName}", e)
++        }
++    }
++
+     private fun setPanelShortcutButton() {
+         val enabled = sharedPreferences.panelShortcutEnabled
+         val statusSpan = SpannableString(
+diff --git a/app/src/main/res/drawable/ic_cast.xml b/app/src/main/res/drawable/ic_cast.xml
+new file mode 100644
+index 0000000..0ed750d
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_cast.xml
+@@ -0,0 +1,15 @@
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="960"
++    android:viewportHeight="960"
++    android:tint="?attr/colorControlNormal"
++    android:autoMirrored="true">
++    <path
++        android:fillColor="@android:color/white"
++        android:pathData="M120,800L120,680Q170,680 205,715Q240,750 240,800L120,800ZM320,800Q320,717 262,659Q204,601 120,601L120,521Q237,521 318.5,602.5Q400,684 400,800L320,800ZM480,800Q480,725 452,659.5Q424,594 375.5,545Q327,496 261.5,468Q196,440 120,440L120,360Q212,360 292.5,395Q373,430 433,490Q493,550 528,630.5Q563,711 563,800L480,800ZM120,240L120,160Q120,127 143.5,103.5Q167,80 200,80L760,80Q793,80 816.5,103.5Q840,127 840,160L840,640Q840,673 816.5,696.5Q793,720 760,720L680,720L680,640L760,640Q760,640 760,640Q760,640 760,640L760,160Q760,160 760,160Q760,160 760,160L200,160Q200,160 200,160Q200,160 200,160L200,240L120,240Z" />
++</vector>
+diff --git a/app/src/main/res/layout/activity_system_options.xml b/app/src/main/res/layout/activity_system_options.xml
+index 976042b..1005a72 100644
+--- a/app/src/main/res/layout/activity_system_options.xml
++++ b/app/src/main/res/layout/activity_system_options.xml
+@@ -168,6 +168,31 @@
+ 
+             </LinearLayout>
+ 
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="6dp"
++                android:orientation="horizontal">
++
++                <org.lineageos.tv.launcher.view.TwoLineButton
++                    android:id="@+id/streamingTwoLineButton"
++                    style="@style/TwoLineSystemOptionsButtonStyle"
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_marginEnd="6dp"
++                    android:layout_weight="1"
++                    android:text="@string/streaming_status"
++                    app:icon="@drawable/ic_cast" />
++
++                <!-- Half-width, like every other tile. The second slot is for
++                     the video receiver when there is one. -->
++                <Space
++                    android:layout_width="0dp"
++                    android:layout_height="wrap_content"
++                    android:layout_weight="1" />
++
++            </LinearLayout>
++
+         </LinearLayout>
+ 
+         <androidx.constraintlayout.widget.ConstraintLayout
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index b41fa93..1b667ab 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -51,6 +51,14 @@
+     <string name="accessibility_color_correction">Colour correction</string>
+     <string name="accessibility_captions">Captions</string>
+     <string name="accessibility_audio_description">Audio description</string>
++    <string name="streaming_status">Streaming\n%1$s</string>
++    <string name="streaming_title">Stream to this device</string>
++    <string name="streaming_off">Off</string>
++    <string name="streaming_airplay">AirPlay</string>
++    <plurals name="streaming_targets_on">
++        <item quantity="one">%1$d target on</item>
++        <item quantity="other">%1$d targets on</item>
++    </plurals>
+     <string name="panel_shortcut_status">Panel shortcut\n%1$s</string>
+     <string name="enabled">Enabled</string>
+     <string name="disabled">Disabled</string>
+-- 
+2.43.0
+

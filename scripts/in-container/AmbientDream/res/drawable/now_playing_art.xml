@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <!-- Stands in for cover art until it arrives, and stops a transparent or
+         short image showing the photograph through it. -->
+    <solid android:color="#1A1A1E" />
+    <corners android:radius="8dp" />
+</shape>

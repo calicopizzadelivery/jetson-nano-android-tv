@@ -15,6 +15,7 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.io.File;
@@ -33,7 +34,7 @@ import java.util.concurrent.Executors;
  * shapes two decisions: it never gives up and shows nothing, and it keeps a
  * local cache so an unreachable network changes nothing the viewer can see.
  */
-public class AmbientDreamService extends DreamService {
+public class AmbientDreamService extends DreamService implements NowPlaying.Listener {
 
     private static final String TAG = "AmbientDream";
 
@@ -43,6 +44,9 @@ public class AmbientDreamService extends DreamService {
     /** Conditions go stale faster than the picture changes. */
     private static final long WEATHER_MS = 10 * 60_000L;
     private static final long FADE_MS = 2_000L;
+
+    /** How often the progress bar is nudged along while something plays. */
+    private static final long PROGRESS_MS = 1_000L;
 
     /** Roughly a day of viewing before anything repeats. */
     private static final int CACHE_MAX = 40;
@@ -57,6 +61,17 @@ public class AmbientDreamService extends DreamService {
     private TextView mCreditAttribution;
     private TextView mWeather;
     private ImageView mWeatherIcon;
+
+    private View mNowPlaying;
+    private View mNowPlayingScrim;
+    private ImageView mNowPlayingArt;
+    private TextView mNowPlayingSource;
+    private TextView mNowPlayingTitle;
+    private TextView mNowPlayingArtist;
+    private ProgressBar mNowPlayingProgress;
+
+    private NowPlaying mNowPlayingWatcher;
+    private NowPlaying.State mNowPlayingState;
 
     private int mIndex;
     private boolean mRunning;
@@ -78,6 +93,14 @@ public class AmbientDreamService extends DreamService {
         mCreditAttribution = findViewById(R.id.creditAttribution);
         mWeather = findViewById(R.id.weather);
         mWeatherIcon = findViewById(R.id.weatherIcon);
+
+        mNowPlaying = findViewById(R.id.nowPlaying);
+        mNowPlayingScrim = findViewById(R.id.nowPlayingScrim);
+        mNowPlayingArt = findViewById(R.id.nowPlayingArt);
+        mNowPlayingSource = findViewById(R.id.nowPlayingSource);
+        mNowPlayingTitle = findViewById(R.id.nowPlayingTitle);
+        mNowPlayingArtist = findViewById(R.id.nowPlayingArtist);
+        mNowPlayingProgress = findViewById(R.id.nowPlayingProgress);
     }
 
     @Override
@@ -86,12 +109,18 @@ public class AmbientDreamService extends DreamService {
         mRunning = true;
         mIo.execute(this::loadQueue);
         refreshWeather();
+        mNowPlayingWatcher = new NowPlaying(this, this);
+        mNowPlayingWatcher.start();
     }
 
     @Override
     public void onDreamingStopped() {
         mRunning = false;
         mHandler.removeCallbacksAndMessages(null);
+        if (mNowPlayingWatcher != null) {
+            mNowPlayingWatcher.stop();
+            mNowPlayingWatcher = null;
+        }
         super.onDreamingStopped();
     }
 
@@ -251,6 +280,69 @@ public class AmbientDreamService extends DreamService {
             });
         });
     }
+
+    /**
+     * Callbacks arrive on the main looper, so this touches views directly.
+     * Called for every metadata and transport change, so it has to be cheap
+     * and idempotent -- a track with a long title fires several in a row as
+     * the pieces land.
+     */
+    @Override
+    public void onNowPlayingChanged(NowPlaying.State state) {
+        mNowPlayingState = state;
+        if (!mRunning) {
+            return;
+        }
+        if (state == null) {
+            mNowPlaying.setVisibility(View.GONE);
+            mNowPlayingScrim.setVisibility(View.GONE);
+            mHandler.removeCallbacks(mProgressTick);
+            return;
+        }
+
+        mNowPlayingTitle.setText(state.title);
+        mNowPlayingArtist.setText(state.artist);
+        mNowPlayingArtist.setVisibility(
+                TextUtils.isEmpty(state.artist) ? View.GONE : View.VISIBLE);
+        mNowPlayingSource.setText(state.source);
+        mNowPlayingSource.setVisibility(
+                TextUtils.isEmpty(state.source) ? View.GONE : View.VISIBLE);
+
+        if (state.artwork != null) {
+            mNowPlayingArt.setImageBitmap(state.artwork);
+            mNowPlayingArt.setVisibility(View.VISIBLE);
+        } else {
+            // No art yet, or none at all. Keep the tile rather than reflowing
+            // the row: for AirPlay the cover arrives a moment after the title,
+            // and the text jumping left then right is worse than a blank.
+            mNowPlayingArt.setImageDrawable(null);
+        }
+
+        mNowPlaying.setVisibility(View.VISIBLE);
+        mNowPlayingScrim.setVisibility(View.VISIBLE);
+
+        mHandler.removeCallbacks(mProgressTick);
+        mProgressTick.run();
+    }
+
+    private final Runnable mProgressTick = new Runnable() {
+        @Override
+        public void run() {
+            final NowPlaying.State state = mNowPlayingState;
+            if (!mRunning || state == null) {
+                return;
+            }
+            if (state.durationMs <= 0) {
+                mNowPlayingProgress.setVisibility(View.GONE);
+                return;
+            }
+            final long position = Math.max(0, Math.min(state.positionNowMs(), state.durationMs));
+            mNowPlayingProgress.setProgress(
+                    (int) (position * mNowPlayingProgress.getMax() / state.durationMs));
+            mNowPlayingProgress.setVisibility(View.VISIBLE);
+            mHandler.postDelayed(this, PROGRESS_MS);
+        }
+    };
 
     private void crossfadeTo(Bitmap bitmap) {
         mBack.setImageBitmap(bitmap);

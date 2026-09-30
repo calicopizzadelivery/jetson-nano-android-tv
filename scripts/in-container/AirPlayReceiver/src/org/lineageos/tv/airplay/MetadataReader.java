@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Reads Shairport Sync's metadata pipe.
@@ -39,15 +40,27 @@ final class MetadataReader implements Runnable {
     private static final int CODE_TITLE = fourCC("minm");
     private static final int CODE_ARTIST = fourCC("asar");
     private static final int CODE_ALBUM = fourCC("asal");
+    /** Track length in milliseconds, as a big-endian 32-bit integer. */
+    private static final int CODE_DURATION = fourCC("astm");
     private static final int CODE_ARTWORK = fourCC("PICT");
     /** The name of the device doing the sending. */
     private static final int CODE_CLIENT_NAME = fourCC("snam");
     private static final int CODE_PLAY_BEGIN = fourCC("pbeg");
     private static final int CODE_PLAY_END = fourCC("pend");
     private static final int CODE_PLAY_FLUSH = fourCC("pfls");
+    /** Progress: three RTP timestamps, "start/current/end". */
+    private static final int CODE_PROGRESS = fourCC("prgr");
+    /** Brackets a group of 'core' items describing one track. */
+    private static final int CODE_METADATA_START = fourCC("mdst");
+    private static final int CODE_METADATA_END = fourCC("mden");
+
+    /** Classic RAOP is always 44100; progress timestamps are in frames. */
+    private static final int RAOP_FRAME_RATE = 44100;
 
     interface Listener {
-        void onTrack(String title, String artist, String album);
+        void onTrack(String title, String artist, String album, long durationMs);
+
+        void onProgress(long positionMs, long durationMs);
 
         void onArtwork(byte[] jpeg);
 
@@ -61,6 +74,16 @@ final class MetadataReader implements Runnable {
     private volatile boolean running = true;
 
     private String title, artist, album;
+    private long durationMs;
+    /**
+     * Whether we are between an 'mdst' and its 'mden'. Shairport brackets
+     * every DAAP group with that pair unconditionally, so inside a group the
+     * items are accumulated and published once at the end -- one update per
+     * track rather than one per tag. A 'core' item arriving outside a group
+     * is published immediately, so a receiver that ever stops bracketing
+     * degrades to the old behaviour instead of going silent.
+     */
+    private boolean inGroup;
 
     MetadataReader(File pipe, Listener listener) {
         this.pipe = pipe;
@@ -176,7 +199,7 @@ final class MetadataReader implements Runnable {
                 }
             }
         }
-        String text = data == null ? null : new String(data);
+        String text = data == null ? null : new String(data, StandardCharsets.UTF_8);
 
         if (type == TYPE_CORE) {
             if (code == CODE_TITLE) {
@@ -185,20 +208,73 @@ final class MetadataReader implements Runnable {
                 artist = text;
             } else if (code == CODE_ALBUM) {
                 album = text;
+            } else if (code == CODE_DURATION) {
+                durationMs = beInt(data);
             } else {
                 return;
             }
-            listener.onTrack(title, artist, album);
+            if (!inGroup) {
+                publishTrack();
+            }
         } else if (type == TYPE_SSNC) {
-            if (code == CODE_ARTWORK && data != null && data.length > 0) {
+            if (code == CODE_METADATA_START) {
+                // A new track's tags follow. Clear first: a sender that omits
+                // a field means "this track has none", not "keep the last
+                // track's", and without this an untitled track inherits the
+                // previous title.
+                title = artist = album = null;
+                durationMs = 0;
+                inGroup = true;
+            } else if (code == CODE_METADATA_END) {
+                inGroup = false;
+                publishTrack();
+            } else if (code == CODE_ARTWORK && data != null && data.length > 0) {
                 listener.onArtwork(data);
             } else if (code == CODE_CLIENT_NAME && text != null) {
                 listener.onClientName(text);
+            } else if (code == CODE_PROGRESS && text != null) {
+                handleProgress(text);
             } else if (code == CODE_PLAY_BEGIN) {
                 listener.onPlaying(true);
             } else if (code == CODE_PLAY_END || code == CODE_PLAY_FLUSH) {
                 listener.onPlaying(false);
             }
+        }
+    }
+
+    private void publishTrack() {
+        listener.onTrack(title, artist, album, durationMs);
+    }
+
+    /** Big-endian, and short or absent data reads as zero rather than throwing. */
+    private static long beInt(byte[] data) {
+        if (data == null || data.length < 4) {
+            return 0;
+        }
+        return ((long) (data[0] & 0xFF) << 24) | ((data[1] & 0xFF) << 16)
+                | ((data[2] & 0xFF) << 8) | (data[3] & 0xFF);
+    }
+
+    /**
+     * "start/current/end" in RTP frames. The span gives a duration for senders
+     * that send progress but no astm; where both arrive, astm wins, because a
+     * station streaming continuously reports a moving end.
+     */
+    private void handleProgress(String text) {
+        String[] parts = text.trim().split("/");
+        if (parts.length != 3) {
+            return;
+        }
+        try {
+            long start = Long.parseLong(parts[0].trim());
+            long current = Long.parseLong(parts[1].trim());
+            long end = Long.parseLong(parts[2].trim());
+            long positionMs = (current - start) * 1000L / RAOP_FRAME_RATE;
+            long spanMs = durationMs > 0 ? durationMs : (end - start) * 1000L / RAOP_FRAME_RATE;
+            listener.onProgress(Math.max(0, positionMs), Math.max(0, spanMs));
+        } catch (NumberFormatException e) {
+            // Not all senders send frame counts here; ignore rather than log
+            // once a second.
         }
     }
 }

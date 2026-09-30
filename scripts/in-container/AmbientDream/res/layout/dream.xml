@@ -32,6 +32,107 @@
         android:layout_gravity="bottom"
         android:background="@drawable/scrim" />
 
+    <View
+        android:id="@+id/nowPlayingScrim"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:layout_gravity="top"
+        android:background="@drawable/scrim_top"
+        android:visibility="gone" />
+
+    <!-- What is playing, when anything is. Top-left: the clock owns the
+         bottom-right and the photo credit the bottom-left, and a panel that
+         only sometimes appears should not push either of them around. -->
+    <LinearLayout
+        android:id="@+id/nowPlaying"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="72dp"
+        android:layout_marginTop="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/nowPlayingArt"
+            android:layout_width="132dp"
+            android:layout_height="132dp"
+            android:background="@drawable/now_playing_art"
+            android:clipToOutline="true"
+            android:contentDescription="@null"
+            android:scaleType="centerCrop" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="24dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/nowPlayingSource"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.08"
+                android:maxLines="1"
+                android:maxWidth="520dp"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="10"
+                android:textAllCaps="true"
+                android:textColor="#B8C6D2"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/nowPlayingTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-black"
+                android:maxLines="1"
+                android:maxWidth="520dp"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="2"
+                android:shadowRadius="14"
+                android:textColor="#FFFFFF"
+                android:textSize="34sp" />
+
+            <TextView
+                android:id="@+id/nowPlayingArtist"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:maxWidth="520dp"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="10"
+                android:textColor="#E8EEF3"
+                android:textSize="20sp" />
+
+            <!-- Hidden for anything without a known length: a live stream has
+                 no end, and a bar that never moves looks broken. -->
+            <ProgressBar
+                android:id="@+id/nowPlayingProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="360dp"
+                android:layout_height="4dp"
+                android:layout_marginTop="16dp"
+                android:max="1000"
+                android:progressDrawable="@drawable/now_playing_progress"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

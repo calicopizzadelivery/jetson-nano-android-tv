@@ -18,6 +18,7 @@ import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.text.TextUtils;
 import android.util.Log;
@@ -43,7 +44,7 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
     public static final String ACTION_STOP = "org.lineageos.tv.airplay.STOP";
 
     /** Read by init; see shairport-sync.rc. */
-    private static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
+    static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
     private static final String PROP_NAME = "persist.jetsontv.airplay.name";
 
     /** Matches --metadata-pipename in shairport-sync.rc. */
@@ -61,6 +62,18 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
     private String clientName;
     private Bitmap artwork;
     private boolean playing;
+
+    /**
+     * The last thing each source told us. The metadata has to be assembled
+     * from a cache rather than from whatever call is in hand, because the
+     * pieces arrive separately: the DAAP tags come first, then the cover art,
+     * then progress once a second. MediaMetadata has no partial update -- each
+     * setMetadata replaces the lot -- so building from only the current call's
+     * arguments blanks everything the other sources had contributed.
+     */
+    private String title, artist, album;
+    private long durationMs;
+    private long positionMs;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -178,7 +191,60 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
     // ---- metadata ---------------------------------------------------------
 
     @Override
-    public void onTrack(String title, String artist, String album) {
+    public void onTrack(String newTitle, String newArtist, String newAlbum, long newDurationMs) {
+        // A new track invalidates the old cover: the sender sends art after
+        // the tags, so anything still held belongs to the track before this
+        // one and would otherwise sit under the new title until it arrives.
+        if (!TextUtils.equals(newTitle, title) || !TextUtils.equals(newAlbum, album)) {
+            artwork = null;
+            positionMs = 0;
+        }
+        title = newTitle;
+        artist = newArtist;
+        album = newAlbum;
+        durationMs = newDurationMs;
+        Log.i(TAG, "track: " + title + " / " + artist + " / " + album
+                + (durationMs > 0 ? " (" + durationMs + " ms)" : ""));
+        publishMetadata();
+        publishState();
+        updateNotification();
+    }
+
+    @Override
+    public void onProgress(long newPositionMs, long spanMs) {
+        positionMs = newPositionMs;
+        if (durationMs <= 0 && spanMs > 0) {
+            durationMs = spanMs;
+            publishMetadata();
+        }
+        publishState();
+    }
+
+    @Override
+    public void onArtwork(byte[] jpeg) {
+        Bitmap bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+        if (bitmap == null) {
+            Log.w(TAG, "cover art was not a decodable image (" + jpeg.length + " B)");
+            return;
+        }
+        Log.i(TAG, "cover art " + bitmap.getWidth() + "x" + bitmap.getHeight());
+        artwork = bitmap;
+        publishMetadata();
+    }
+
+    @Override
+    public void onClientName(String name) {
+        clientName = name;
+        Log.i(TAG, "streaming from \"" + name + "\"");
+        publishMetadata();
+        updateNotification();
+    }
+
+    /** Rebuild the whole MediaMetadata from the cache; see the fields above. */
+    private void publishMetadata() {
+        if (session == null) {
+            return;
+        }
         MediaMetadata.Builder b = new MediaMetadata.Builder();
         if (!TextUtils.isEmpty(title)) {
             b.putString(MediaMetadata.METADATA_KEY_TITLE, title);
@@ -189,6 +255,9 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         if (!TextUtils.isEmpty(album)) {
             b.putString(MediaMetadata.METADATA_KEY_ALBUM, album);
         }
+        if (durationMs > 0) {
+            b.putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs);
+        }
         if (artwork != null) {
             b.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork);
         }
@@ -196,26 +265,7 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         if (!TextUtils.isEmpty(clientName)) {
             b.putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, clientName);
         }
-        if (session != null) {
-            session.setMetadata(b.build());
-        }
-        updateNotification();
-    }
-
-    @Override
-    public void onArtwork(byte[] jpeg) {
-        Bitmap bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
-        if (bitmap != null) {
-            artwork = bitmap;
-            onTrack(null, null, null); // re-publish with the art attached
-        }
-    }
-
-    @Override
-    public void onClientName(String name) {
-        clientName = name;
-        Log.i(TAG, "streaming from \"" + name + "\"");
-        updateNotification();
+        session.setMetadata(b.build());
     }
 
     @Override
@@ -226,6 +276,8 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         } else {
             abandonFocus();
             artwork = null;
+            positionMs = 0;
+            publishMetadata();
         }
         publishState();
         updateNotification();
@@ -235,9 +287,11 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         if (session == null) {
             return;
         }
+        // The position is paired with the time it was taken, so a client can
+        // extrapolate between the once-a-second updates instead of stepping.
         session.setPlaybackState(new PlaybackState.Builder()
                 .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_STOPPED,
-                        PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                        positionMs, playing ? 1.0f : 0.0f, SystemClock.elapsedRealtime())
                 .build());
     }
 

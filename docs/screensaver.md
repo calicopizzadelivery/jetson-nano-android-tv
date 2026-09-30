@@ -209,3 +209,33 @@ WMO code is mapped to a short label by `describe()`.
 
 Both services are anonymous GETs over HTTPS. Neither is configured with an
 account, and the only thing leaving the box is an approximate location.
+
+## The now-playing panel
+
+AmbientDream draws what is playing over the photograph — cover art, title,
+artist, where it is coming from, and a progress bar — because a screensaver is
+what the television shows while music is on and nothing is being watched.
+
+It watches `MediaSessionManager` rather than anything AirPlay-shaped, so the
+AirPlay receiver, Kodi and Plex all get the same panel for the same code. Two
+levels of callback are needed: `OnActiveSessionsChangedListener` for an app
+starting or stopping playback at all, and a `MediaController.Callback` on the
+chosen session for the track and transport changes within it.
+
+Three things worth knowing:
+
+- **It costs `MEDIA_CONTENT_CONTROL`**, which is `signature|privileged`, so
+  AmbientDream is platform-signed and privileged with its own privapp
+  allowlist. The public alternative is a notification listener, which needs a
+  setting the viewer has to find and turn on.
+
+- **Only a session that is actually `STATE_PLAYING` counts.** A box holds
+  several at once — a paused video and a playing stream — and only one belongs
+  on screen.
+
+- **A session with no title is ignored.** A game's background music should
+  leave the photograph alone.
+
+Positions arrive about once a second. `PlaybackState` carries the moment each
+one was taken, and the panel extrapolates from it, which is what keeps the bar
+moving smoothly rather than stepping once a second.

@@ -289,3 +289,22 @@ Note for bench testing: our FRDM-K64F injector is a boot-protocol keyboard
 `KEYCODE_MENU` as shipped. HID usage 0x65 (Keyboard Application) maps to it —
 adding that one entry to the firmware's key table is enough to drive this from
 the bench.
+
+## Catapult/0006 — a Streaming tile
+
+The panel had no way to reach the AirPlay receiver: it was enabled by setting a
+system property by hand over adb. The tile shows what the box is advertising as
+a streaming target and offers a switch per target, with the second slot in the
+row left for the video receiver.
+
+The switch starts and stops the target's *service* rather than writing the
+property, even though this package is allowed to write it. The property is only
+what init watches to run the daemon; the service is what holds audio focus and
+turns the daemon's metadata into a MediaSession, and a daemon started without
+it plays over whatever else is on and puts nothing on screen. The service sets
+the property once it is up, which is why the property is still what the tile
+reads back.
+
+Upstreamable as-is: the tile resolves each receiver's service before offering
+it and hides itself when none is installed, so the patch is inert on a tree
+without them.

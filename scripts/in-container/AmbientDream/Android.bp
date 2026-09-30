@@ -9,6 +9,13 @@ android_app {
     sdk_version: "current",
     product_specific: true,
 
+    // Privileged and platform-signed for MEDIA_CONTENT_CONTROL, which is what
+    // lets the now-playing panel see every app's MediaSession rather than
+    // only an AirPlay-shaped one. See NowPlaying.java.
+    certificate: "platform",
+    privileged: true,
+    required: ["privapp_whitelist_org.lineageos.tv.ambient"],
+
     // Leanback for the settings screen's GuidedStep UI, which is what the
     // rest of the TV settings look like. FragmentActivity comes from
     // androidx.fragment rather than appcompat on purpose: an AppCompatActivity
@@ -17,4 +24,12 @@ android_app {
         "androidx.leanback_leanback",
         "androidx.fragment_fragment",
     ],
+}
+
+prebuilt_etc {
+    name: "privapp_whitelist_org.lineageos.tv.ambient",
+    product_specific: true,
+    sub_dir: "permissions",
+    src: "privapp_whitelist_org.lineageos.tv.ambient.xml",
+    filename_from_src: true,
 }

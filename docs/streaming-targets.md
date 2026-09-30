@@ -252,14 +252,99 @@ reflash to verify.
 The emulator could never have caught this: the policy is porg-only and was
 verified by compilation alone.
 
+### Metadata end to end, 29 September
+
+Proven on the emulator, from sender to screen. `raopsend` now sends metadata
+as well as audio, which is what had been missing: a receiver writes to its
+metadata pipe only what a sender gives it, so a tone-only sender leaves the
+pipe silent and there is no way to tell a broken pipe from an idle one.
+
+What Shairport recognises, and what `raopsend` therefore emits (`rtsp.c`,
+`handle_set_parameter`):
+
+| sent | arrives as |
+| --- | --- |
+| `X-Apple-Client-Name:` header on ANNOUNCE | `ssnc`/`snam`, the sender's name |
+| `application/x-dmap-tagged` | `core` items, the DAAP track tags |
+| `image/jpeg` | `ssnc`/`PICT`, the cover art |
+| `text/parameters` `progress: a/b/c` | `ssnc`/`prgr`, position in frames |
+
+**The DMAP framing has one trap.** `handle_set_parameter_metadata` starts at
+`off = 8`: it assumes and discards exactly one container header before the
+first tag. Tags sent at the top level lose their first eight bytes and the run
+desynchronises. They have to sit inside a wrapper, which iTunes sends as
+`mlit`, a listing item. The tags themselves are `minm`, `asar`, `asal` and
+`astm` (track length in milliseconds, big-endian) — `astm` is what gives a
+progress bar something to measure against, since the progress items only carry
+a position.
+
+`RTP-Info: rtptime=` is optional — Shairport only logs its absence — but
+without it every item arrives outside the `mdst`/`mden` brackets that tell a
+reader which items describe one track, so `raopsend` always sends it.
+
+`--second-track` sends a different track at the halfway point, which exercises
+a reader's update path as well as its first read.
+
+Three defects in the reader, all found by actually running it:
+
+- `onArtwork` re-published the metadata with the title, artist and album
+  wiped. `MediaMetadata` has no partial update — each `setMetadata` replaces
+  the lot — and the art arrives *after* the tags, so the panel would have
+  shown a cover with no words under it. Both the service and the dream now
+  assemble from a cache rather than from whatever call is in hand.
+- Fields were never cleared between tracks, so a track that omits one
+  inherited the previous track's. Cleared on `mdst` now.
+- Items were published per tag rather than per group, so one track caused four
+  MediaSession updates. Accumulated between `mdst` and `mden` instead, with an
+  immediate publish retained for anything arriving outside a group.
+
+**Verified on the emulator** with `setenforce 0`, because the porg sepolicy is
+not in that build and the daemon has to be started by hand rather than by
+init. That isolates the logic from the policy; the policy itself is what the
+next porg flash tests, `patches/porg/0003` included.
+
+### The Streaming tile
+
+`patches/Catapult/0006`. Shows what the box is advertising and offers a switch
+per target, because until now the receiver could only be enabled by setting a
+system property by hand over adb.
+
+The switch starts and stops the *service*, not the property, even though the
+panel is allowed to write it. The property is only what init watches to run
+the daemon; the service holds audio focus and publishes the MediaSession, and
+a daemon running without it plays over whatever else is on and shows nothing.
+The service sets the property once it is up, so the property is still what the
+tile reads back.
+
+`startService`, not `startForegroundService`: the panel is on screen so the
+background-start restriction does not apply, and `startForegroundService` is
+wrong for the stop case — it promises a `startForeground()` that a service
+shutting itself down never makes, and the platform kills it for that.
+
+### The now-playing surface
+
+AmbientDream draws it, over the photograph: cover art, title, artist, the
+sender, and a progress bar. It watches `MediaSessionManager` rather than
+anything AirPlay-shaped, so Kodi and Plex get the same panel for the same
+code.
+
+That costs `MEDIA_CONTENT_CONTROL`, which is `signature|privileged`, so
+AmbientDream is now platform-signed and privileged with its own privapp
+allowlist. The alternative — a notification listener — needs a setting the
+viewer has to go and find and turn on.
+
+Positions arrive about once a second. `PlaybackState` carries the moment each
+one was taken, and the panel extrapolates from it, which is what keeps the bar
+moving smoothly rather than stepping.
+
+A session with no title is ignored rather than drawn: a game's background
+music should leave the photograph alone.
+
 ### Still to do
 
-1. **Exercise the metadata path end to end.** It needs the porg image (or the
-   porg sepolicy temporarily added to the emulator build) *and* `raopsend`
-   extended to send DAAP tags over `SET_PARAMETER` — it currently sends audio
-   and nothing else, so there is no metadata for the pipe to carry.
-2. **A Streaming tile** in the panel — what is advertised, and an off switch.
-3. **A now-playing surface**: the MediaSession exists, nothing draws it yet.
-   AmbientDream is the obvious place, since it is already what the screen shows
-   when nothing else is happening.
-4. **FCast**, for video.
+1. **Verify on hardware.** Everything above is proven on the emulator; the
+   next porg flash is what tests the sepolicy, `patches/porg/0003` included.
+2. **FCast**, for video.
+3. **Bonjour advertisement.** The daemon uses the bundled tinysvcmdns; nothing
+   has yet confirmed a real iOS sender discovers the box by itself, as opposed
+   to being pointed at it.
