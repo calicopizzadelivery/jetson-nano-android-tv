@@ -331,3 +331,10 @@ itself and hangs waiting for an in-process service — and should not run as
 audioserver's callbacks into the daemon, PlayerBase's registration with
 AudioService, and mediametrics — the last because a refused lookup costs ten
 seconds inside `openStream`, not because anything uses the metrics.
+
+## porg/0006 — label the AirPlay session-interrupt property
+
+`jetsontv.airplay.interrupt`, written by the controlling app when another app
+takes audio focus for good, and watched by init to restart the daemon — ending
+the session without switching the receiver off. Same `shairport_prop` label as
+the enable flag.

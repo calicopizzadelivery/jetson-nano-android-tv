@@ -478,6 +478,33 @@ correction under "End to end" above.
 so loopback round trips sawtoothed from 0 to 8 ms and Shairport rejected every
 clock sample. It is its own thread now, at a steady 0.2 ms.
 
+### When something else takes over
+
+If another app takes audio focus for good — a film started in Kodi — the
+current AirPlay session ends and **the receiver stays on**. It used to switch
+itself off, so the Streaming tile read "Off" afterwards and the next person to
+AirPlay found nothing to stream to.
+
+Mechanism: the daemon plays through its own AAudio stream and knows nothing of
+focus, so the controlling app ends the session by writing a fresh value to
+`jetsontv.airplay.interrupt`, and init restarts the daemon. That drops the
+sender and has the daemon advertising again within a second. The trigger is
+guarded on `persist.jetsontv.airplay.enabled`, because init's `restart` starts
+a stopped service and an interrupt must never bring up a receiver that has been
+switched off. The next AirPlay session requests focus in turn and takes it
+back, which is right: starting a stream is an explicit act.
+
+Verified on porg with a scratch app standing in for the video player: focus
+loss logged, daemon restarted (new pid), tile still "AirPlay", and a second
+stream played.
+
+### What is on screen while streaming
+
+Only the now-playing panel in AmbientDream shows a stream, and the dream starts
+after `screen_off_timeout` — 15 minutes here — without input. Streaming does not
+hold it off (the receiver takes no screen wake lock), but a stream started from
+the home screen shows nothing but the notification count until then.
+
 ### Still to do
 
 1. **A real sender.** Everything so far is `raopsend` on loopback. An iPhone

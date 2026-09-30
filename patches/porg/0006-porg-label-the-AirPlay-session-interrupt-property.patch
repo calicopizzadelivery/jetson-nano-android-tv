@@ -1,0 +1,29 @@
+From 511a8bd89c80bc9346c08e2fc26250b89316e679 Mon Sep 17 00:00:00 2001
+From: flippy <flippy@thebe.tail087954.ts.net>
+Date: Tue, 29 Sep 2026 23:38:17 -0500
+Subject: [PATCH] porg: label the AirPlay session-interrupt property
+
+jetsontv.airplay.interrupt is written by the controlling app to end the
+current AirPlay session when another app takes audio focus for good,
+and watched by init, which restarts the daemon. It is an event rather
+than a setting, so it is not persistent, and it takes the same
+shairport_prop label as the enable flag -- the app can already set that
+type, and nothing else should.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Ib90eaeb9e645e7138eb64fa78ae9ee6269b6e2c3
+---
+ sepolicy/private/property_contexts | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sepolicy/private/property_contexts b/sepolicy/private/property_contexts
+index 7916278..bca45bf 100644
+--- a/sepolicy/private/property_contexts
++++ b/sepolicy/private/property_contexts
+@@ -1 +1,3 @@
+ persist.jetsontv.airplay.    u:object_r:shairport_prop:s0
++# The session-interrupt event: set by the controlling app, watched by init.
++jetsontv.airplay.            u:object_r:shairport_prop:s0
+-- 
+2.43.0
+

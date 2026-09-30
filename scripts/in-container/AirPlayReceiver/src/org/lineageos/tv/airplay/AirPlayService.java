@@ -46,6 +46,12 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
 
     /** Read by init; see shairport-sync.rc. */
     static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
+    /**
+     * Written with a fresh value to end the current session; init restarts
+     * the daemon, which drops the sender and is advertising again within a
+     * second. Not persistent: it is an event, not a setting.
+     */
+    private static final String PROP_INTERRUPT = "jetsontv.airplay.interrupt";
     private static final String PROP_NAME = "persist.jetsontv.airplay.name";
 
     /** Matches --metadata-pipename in shairport-sync.rc. */
@@ -170,10 +176,7 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
                         .build())
                 .setOnAudioFocusChangeListener(change -> {
                     if (change == AudioManager.AUDIOFOCUS_LOSS) {
-                        // Something else took over for good. Stop receiving
-                        // rather than fight it; the sender will notice.
-                        Log.i(TAG, "lost audio focus; stopping the receiver");
-                        stopSelf();
+                        endSession();
                     }
                 })
                 .build();
@@ -181,6 +184,32 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             Log.w(TAG, "audio focus refused (" + result + ")");
         }
+    }
+
+    /**
+     * Something else took audio focus for good -- a film started in Kodi,
+     * say. End this stream but keep the receiver on.
+     *
+     * This used to stop the whole service, which turned the receiver off: the
+     * Streaming tile then read "Off" until someone switched it back on, and
+     * the next person to AirPlay found nothing to stream to. A TV box should
+     * behave like any other speaker -- drop the current sender, keep
+     * advertising -- so only the session ends. The daemon plays through its
+     * own AAudio stream and knows nothing of focus, so without this it would
+     * carry on playing over whatever took focus.
+     */
+    private void endSession() {
+        Log.i(TAG, "lost audio focus; ending this session, still advertising");
+        try {
+            SystemProperties.set(PROP_INTERRUPT, Long.toString(SystemClock.elapsedRealtime()));
+        } catch (RuntimeException e) {
+            Log.e(TAG, "could not set " + PROP_INTERRUPT + "; is the sepolicy for it installed?", e);
+        }
+        // The daemon is killed rather than finishing the session, so no
+        // 'pend' will arrive on the pipe; say so ourselves.
+        title = artist = album = null;
+        durationMs = 0;
+        onPlaying(false);
     }
 
     private void abandonFocus() {
