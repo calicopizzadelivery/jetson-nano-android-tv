@@ -309,6 +309,23 @@ Upstreamable as-is: the tile resolves each receiver's service before offering
 it and hides itself when none is installed, so the patch is inert on a tree
 without them.
 
+## Catapult/0007 — every row of the panel the same width
+
+The panel's first two rows (Sleep, Settings, Power; Network, Accessories)
+had 16dp of side padding, and the tile rows added by 0002-0006 had none, so it
+read as two widths. No row has side padding now. The top row is two columns
+like the rest, Sleep on the left and Settings and Power sharing the right, so
+Sleep is exactly as wide as the tile under it: 2:1:1 across three buttons had
+left it 3dp short. The Network row takes the same 6dp top margin as the rows
+below, so the rows are evenly spaced.
+
+**Status**: verified on porg by HDMI capture: every row the same width, and
+the columns aligned. **Known issue:** a focused tile's zoom now reaches the
+panel's edge, so a focused edge tile's outer corner is clipped. The unpadded
+tile rows from 0002-0006 always had this; the 16dp the first two rows had
+was what gave the zoom room. The fix is a small uniform side padding on every
+row; that decision is pending.
+
 ## porg/0003 — label shairport-sync by its real path
 
 porg has no separate system_ext partition; `/system_ext` is a symlink to

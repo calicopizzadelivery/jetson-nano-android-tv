@@ -1,0 +1,115 @@
+From 2ccfa601be1c9558520d1f074be03be5be7e5353 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 11:34:44 -0500
+Subject: [PATCH] System options panel: every row the same width
+
+The first two rows (Sleep, Settings, Power; Network, Accessories) had
+16dp of side padding, and the tile rows below them had none, so the
+panel read as two different widths. Now no row has side padding, and
+the top row is two columns like the rest -- Sleep on the left, Settings
+and Power sharing the right -- so Sleep is exactly as wide as the tile
+under it. Weighting three buttons 2:1:1 had made it 3dp short, because
+there is one more gap to share. The Network row also takes the same 6dp
+top margin as the rows below instead of a 4dp bottom margin, so the
+rows are evenly spaced.
+
+Change-Id: I7a0c1d2b5f7e44a3b8c29c7f1e0d9a6b3c5e8f21
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../res/layout/activity_system_options.xml    | 57 +++++++++++--------
+ 1 file changed, 33 insertions(+), 24 deletions(-)
+
+diff --git a/app/src/main/res/layout/activity_system_options.xml b/app/src/main/res/layout/activity_system_options.xml
+index 1005a72..5558114 100644
+--- a/app/src/main/res/layout/activity_system_options.xml
++++ b/app/src/main/res/layout/activity_system_options.xml
+@@ -45,14 +45,15 @@
+ 
+             </LinearLayout>
+ 
++            <!-- Two columns, like every row below it, so Sleep is exactly as
++                 wide as the tile under it and Settings and Power share the
++                 other column. Weights of 2:1:1 across three buttons came out
++                 3dp short of that, as there is one more gap to share. -->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:layout_marginTop="8dp"
+-                android:clipToPadding="false"
+-                android:paddingStart="16dp"
+-                android:paddingEnd="16dp"
+-                android:weightSum="4">
++                android:clipToPadding="false">
+ 
+                 <com.google.android.material.button.MaterialButton
+                     android:id="@+id/sleepMaterialButton"
+@@ -60,38 +61,46 @@
+                     android:layout_width="0dp"
+                     android:layout_height="wrap_content"
+                     android:layout_marginEnd="6dp"
+-                    android:layout_weight="2"
++                    android:layout_weight="1"
+                     android:text="@string/sleep"
+                     app:icon="@drawable/ic_moon" />
+ 
+-                <com.google.android.material.button.MaterialButton
+-                    android:id="@+id/settingsMaterialButton"
+-                    style="@style/SystemOptionsButtonStyle"
++                <LinearLayout
+                     android:layout_width="0dp"
+                     android:layout_height="wrap_content"
+-                    android:layout_marginEnd="6dp"
+                     android:layout_weight="1"
+-                    app:icon="@drawable/ic_settings"
+-                    app:iconPadding="0dp" />
+-
+-                <com.google.android.material.button.MaterialButton
+-                    android:id="@+id/powerMaterialButton"
+-                    style="@style/SystemOptionsButtonStyle"
+-                    android:layout_width="0dp"
+-                    android:layout_height="wrap_content"
+-                    android:layout_weight="1"
+-                    app:icon="@drawable/ic_power"
+-                    app:iconPadding="0dp" />
++                    android:clipToPadding="false">
++
++                    <com.google.android.material.button.MaterialButton
++                        android:id="@+id/settingsMaterialButton"
++                        style="@style/SystemOptionsButtonStyle"
++                        android:layout_width="0dp"
++                        android:layout_height="wrap_content"
++                        android:layout_marginEnd="6dp"
++                        android:layout_weight="1"
++                        app:icon="@drawable/ic_settings"
++                        app:iconPadding="0dp" />
++
++                    <com.google.android.material.button.MaterialButton
++                        android:id="@+id/powerMaterialButton"
++                        style="@style/SystemOptionsButtonStyle"
++                        android:layout_width="0dp"
++                        android:layout_height="wrap_content"
++                        android:layout_weight="1"
++                        app:icon="@drawable/ic_power"
++                        app:iconPadding="0dp" />
++
++                </LinearLayout>
+ 
+             </LinearLayout>
+ 
++            <!-- No side padding, and the same 6dp above as the rows below:
++                 the tiles all line up edge to edge and evenly spaced. -->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+-                android:layout_marginBottom="4dp"
+-                android:clipToPadding="false"
+-                android:paddingStart="16dp"
+-                android:paddingEnd="16dp">
++                android:layout_marginTop="6dp"
++                android:clipToPadding="false">
+ 
+                 <org.lineageos.tv.launcher.view.TwoLineButton
+                     android:id="@+id/networkTwoLineButton"
+-- 
+2.43.0
+
