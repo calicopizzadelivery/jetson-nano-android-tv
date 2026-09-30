@@ -7,4 +7,5 @@
 
 PRODUCT_PACKAGES += \
     AirPlayReceiver \
-    AmbientDream
+    AmbientDream \
+    shairport-sync

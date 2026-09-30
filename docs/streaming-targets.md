@@ -230,6 +230,28 @@ Two things worth knowing if you touch it:
   writer closes; both are normal, so the reader loops. When the pipe does not
   exist at all it backs off and says so once, rather than spinning.
 
+### Deployed, 30 September
+
+Flashed to the porg hardware and booted. Present and correct: the daemon, its
+init `.rc`, `AirPlayReceiver`, and the property label `shairport_prop`.
+
+**One defect found only on hardware.** porg has no separate system_ext
+partition — `/system_ext` is a symlink to `/system/system_ext` — and file
+contexts are matched against the *real* path when the image is built. The
+`/system_ext/bin/shairport-sync` entry therefore matched nothing and the binary
+shipped as plain `system_file`. Silent at build time, fatal at runtime: with
+the wrong exec label init cannot transition the service into the `shairport`
+domain, so it never starts and `/data/misc/airplay` is never created.
+
+The property was labelled correctly throughout, because property contexts are
+not path-matched — which is what made the failure look partial and confusing.
+
+Fixed in `patches/porg/0003` by listing both path forms. Needs a rebuild and
+reflash to verify.
+
+The emulator could never have caught this: the policy is porg-only and was
+verified by compilation alone.
+
 ### Still to do
 
 1. **Exercise the metadata path end to end.** It needs the porg image (or the
