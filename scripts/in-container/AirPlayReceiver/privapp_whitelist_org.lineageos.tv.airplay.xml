@@ -8,6 +8,8 @@
         <!-- Seeing whether the home screen is in front when a stream starts,
              and if so starting the screensaver so the now-playing panel is on
              the television. See AirPlayService.showNowPlayingIfIdle(). -->
+        <!-- Bringing the mirroring screen up when mirroring starts. -->
+        <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
         <permission name="android.permission.REAL_GET_TASKS" />
         <permission name="android.permission.WRITE_DREAM_STATE" />
     </privapp-permissions>

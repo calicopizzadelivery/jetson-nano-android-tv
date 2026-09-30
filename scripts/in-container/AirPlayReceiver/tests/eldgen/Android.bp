@@ -1,0 +1,17 @@
+//
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+//
+
+// Writes the audio a phone sends while mirroring -- AAC-ELD, 480 samples a
+// frame -- for AirPlayReceiver's self-test. Android's own AAC encoder only
+// frames ELD at 512, so it cannot stand in for a sender. Host only, and
+// never installed:
+//
+//   m airplay_eldgen && out/host/linux-x86/bin/airplay_eldgen 20 eld.bin
+cc_binary_host {
+    name: "airplay_eldgen",
+    srcs: ["eldgen.cpp"],
+    static_libs: ["libFraunhoferAAC"],
+    cflags: ["-Wall", "-Werror"],
+}

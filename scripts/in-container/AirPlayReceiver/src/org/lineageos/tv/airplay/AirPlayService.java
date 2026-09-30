@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: 2026 The LineageOS Project
- * SPDX-License-Identifier: Apache-2.0
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 package org.lineageos.tv.airplay;
 
@@ -10,7 +10,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
@@ -22,7 +24,9 @@ import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -34,63 +38,87 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Runs the AirPlay receiver.
+ * The AirPlay receiver: screen mirroring from a Mac, iPhone or iPad, and
+ * AirPlay audio.
  *
- * It does not exec anything: the daemon is an init service, and this only sets
- * the property that starts it. That keeps the SELinux story simple -- an app
- * that could exec a system binary would need far more.
+ * The protocol is UxPlay's, running in this process (see UxPlay.java); this
+ * service owns everything around it. Audio plays through AudioRenderer, and
+ * mirroring through VideoRenderer onto MirrorActivity, which is brought up
+ * when a sender starts mirroring and taken down when it stops.
  *
- * Its real jobs are the two things a headless daemon cannot do for itself:
- * hold audio focus, so AirPlay and Kodi do not talk over each other, and turn
- * the metadata pipe into a MediaSession so something appears on screen.
+ * The rest is what a headless receiver cannot do for itself: hold audio focus
+ * so AirPlay and Kodi do not talk over each other, publish a MediaSession so
+ * the now-playing panel can show what is playing, and put that panel on the
+ * television when music starts while nothing else is on screen.
+ *
+ * This replaced a shairport-sync daemon started by init. The switch that the
+ * Streaming tile reads is still persist.jetsontv.airplay.enabled; it now only
+ * records whether the receiver is on.
  */
-public class AirPlayService extends Service implements MetadataReader.Listener {
+public class AirPlayService extends Service implements UxPlay.Listener {
 
     private static final String TAG = "AirPlay";
 
     public static final String ACTION_START = "org.lineageos.tv.airplay.START";
     public static final String ACTION_STOP = "org.lineageos.tv.airplay.STOP";
+    private static final String ACTION_END_SESSION = "org.lineageos.tv.airplay.END_SESSION";
+    /** Bench only; see SelfTest. */
+    private static final String ACTION_SELFTEST = "org.lineageos.tv.airplay.SELFTEST";
 
-    /** Read by init; see shairport-sync.rc. */
+    /** Read by the Streaming tile. */
     static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
-    /**
-     * Written with a fresh value to end the current session; init restarts
-     * the daemon, which drops the sender and is advertising again within a
-     * second. Not persistent: it is an event, not a setting.
-     */
-    private static final String PROP_INTERRUPT = "jetsontv.airplay.interrupt";
     private static final String PROP_NAME = "persist.jetsontv.airplay.name";
-
-    /** Matches --metadata-pipename in shairport-sync.rc. */
-    private static final File METADATA_PIPE = new File("/data/misc/airplay/metadata");
 
     private static final String CHANNEL_ID = "airplay";
     private static final int NOTIFICATION_ID = 1;
 
+    private static volatile AirPlayService running;
+
+    private final Handler main = new Handler(Looper.getMainLooper());
+    /** Start and stop in order, and off the main thread: stop joins UxPlay's threads. */
+    private final ExecutorService control = Executors.newSingleThreadExecutor();
+
+    private final AudioRenderer audio = new AudioRenderer();
+    private final VideoRenderer video = new VideoRenderer();
+    private UxPlay uxplay;
+
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
     private MediaSession session;
-    private MetadataReader reader;
-    private Thread readerThread;
 
+    // Main thread only from here down.
+    private boolean mirroring;
     private String clientName;
     private Bitmap artwork;
     private boolean playing;
 
     /**
-     * The last thing each source told us. The metadata has to be assembled
-     * from a cache rather than from whatever call is in hand, because the
-     * pieces arrive separately: the DAAP tags come first, then the cover art,
-     * then progress once a second. MediaMetadata has no partial update -- each
-     * setMetadata replaces the lot -- so building from only the current call's
-     * arguments blanks everything the other sources had contributed.
+     * The last thing each source told us. MediaMetadata has no partial update
+     * -- each setMetadata replaces the lot -- and the pieces arrive separately
+     * (tags, then cover art, then progress), so it is always rebuilt from
+     * here rather than from whatever call is in hand.
      */
     private String title, artist, album;
     private long durationMs;
     private long positionMs;
+
+    static VideoRenderer video() {
+        AirPlayService s = running;
+        return s == null ? null : s.video;
+    }
+
+    /** Back on the mirroring screen: drop the sender. */
+    static void endSessionFromTv(Context context) {
+        context.startService(new Intent(ACTION_END_SESSION).setClass(context, AirPlayService.class));
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -99,11 +127,21 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+        String action = intent == null ? null : intent.getAction();
+        if (ACTION_STOP.equals(action)) {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (ACTION_END_SESSION.equals(action)) {
+            endSession("ended from the television");
+            return START_STICKY;
+        }
         start();
+        if (ACTION_SELFTEST.equals(action) && android.os.Build.IS_DEBUGGABLE) {
+            int seconds = intent.getIntExtra("seconds", 10);
+            new Thread(new SelfTest(this, seconds, intent.getStringExtra("audio"),
+                    new File(getFilesDir(), "selftest-eld.bin")), "airplay-selftest").start();
+        }
         return START_STICKY;
     }
 
@@ -111,6 +149,7 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         if (session != null) {
             return; // already running
         }
+        running = this;
         audioManager = getSystemService(AudioManager.class);
 
         NotificationManager notifications = getSystemService(NotificationManager.class);
@@ -123,24 +162,46 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         session.setActive(true);
         publishState();
 
-        // Start the daemon. init owns it; we only ask.
-        if (setEnabled(true)) {
-            Log.i(TAG, "receiver enabled, advertising as \""
-                    + SystemProperties.get(PROP_NAME, "Jetson TV") + "\"");
-        }
+        setEnabled(true);
+        uxplay = new UxPlay(this, this);
+        control.execute(this::startServer);
+    }
 
-        reader = new MetadataReader(METADATA_PIPE, this);
-        readerThread = new Thread(reader, "airplay-metadata");
-        readerThread.setDaemon(true);
-        readerThread.start();
+    private void startServer() {
+        String name = SystemProperties.get(PROP_NAME, "Jetson TV");
+        int port = uxplay.start(name, deviceId(),
+                new File(getFilesDir(), "uxplay.pem").getAbsolutePath());
+        if (port > 0) {
+            Log.i(TAG, "receiver enabled, advertising as \"" + name + "\" on port " + port);
+        } else {
+            Log.e(TAG, "the AirPlay server did not start");
+        }
+    }
+
+    /**
+     * The device id senders know us by, as a MAC address. Kept stable across
+     * restarts so a phone that has seen this box before recognises it. A
+     * locally administered random address rather than a real one: nothing
+     * here needs the hardware's, and it is not ours to broadcast.
+     */
+    private String deviceId() {
+        SharedPreferences prefs = getSharedPreferences("airplay", MODE_PRIVATE);
+        String id = prefs.getString("device_id", null);
+        if (id == null) {
+            byte[] b = new byte[6];
+            new SecureRandom().nextBytes(b);
+            b[0] = (byte) ((b[0] & 0xFC) | 0x02); // unicast, locally administered
+            id = String.format(Locale.ROOT, "%02x:%02x:%02x:%02x:%02x:%02x",
+                    b[0], b[1], b[2], b[3], b[4], b[5]);
+            prefs.edit().putString("device_id", id).apply();
+        }
+        return id;
     }
 
     /**
      * SystemProperties.set throws rather than returning a failure when the
-     * write is refused -- which it is on any build without our property label,
-     * where persist.jetsontv.airplay.enabled is plain default_prop. Letting
-     * that escape takes the whole service down with it, so the receiver would
-     * die at startup instead of simply having no daemon to talk to.
+     * write is refused -- on any build without the property's label. Only
+     * the tile depends on it, so a refusal is logged and ignored.
      */
     private boolean setEnabled(boolean enabled) {
         try {
@@ -156,16 +217,52 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
     public void onDestroy() {
         setEnabled(false);
         abandonFocus();
-        if (reader != null) {
-            reader.stop();
-            readerThread.interrupt();
-        }
+        MirrorActivity.finishIfShowing();
+        final UxPlay server = uxplay;
+        control.execute(() -> {
+            if (server != null) {
+                server.stop();
+            }
+            audio.stop();
+            video.release();
+        });
+        control.shutdown();
         if (session != null) {
             session.setActive(false);
             session.release();
             session = null;
         }
+        if (running == this) {
+            running = null;
+        }
         super.onDestroy();
+    }
+
+    /**
+     * Drop whoever is streaming and go on advertising: another app took
+     * audio focus for good, or Back was pressed on the mirroring screen.
+     * Restarting the server is the one reliable way to end a session from
+     * this side, and takes well under a second.
+     */
+    private void endSession(String why) {
+        Log.i(TAG, "ending this session (" + why + "); still advertising");
+        final UxPlay server = uxplay;
+        control.execute(() -> {
+            if (server == null) {
+                return;
+            }
+            server.stop();
+            audio.stop();
+            video.reset();
+            startServer();
+        });
+        main.post(() -> {
+            MirrorActivity.finishIfShowing();
+            mirroring = false;
+            title = artist = album = null;
+            durationMs = 0;
+            setPlaying(false);
+        });
     }
 
     // ---- audio focus ------------------------------------------------------
@@ -186,40 +283,14 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
                         .build())
                 .setOnAudioFocusChangeListener(change -> {
                     if (change == AudioManager.AUDIOFOCUS_LOSS) {
-                        endSession();
+                        endSession("lost audio focus");
                     }
-                })
+                }, main)
                 .build();
         int result = audioManager.requestAudioFocus(focusRequest);
         if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             Log.w(TAG, "audio focus refused (" + result + ")");
         }
-    }
-
-    /**
-     * Something else took audio focus for good -- a film started in Kodi,
-     * say. End this stream but keep the receiver on.
-     *
-     * This used to stop the whole service, which turned the receiver off: the
-     * Streaming tile then read "Off" until someone switched it back on, and
-     * the next person to AirPlay found nothing to stream to. A TV box should
-     * behave like any other speaker -- drop the current sender, keep
-     * advertising -- so only the session ends. The daemon plays through its
-     * own AAudio stream and knows nothing of focus, so without this it would
-     * carry on playing over whatever took focus.
-     */
-    private void endSession() {
-        Log.i(TAG, "lost audio focus; ending this session, still advertising");
-        try {
-            SystemProperties.set(PROP_INTERRUPT, Long.toString(SystemClock.elapsedRealtime()));
-        } catch (RuntimeException e) {
-            Log.e(TAG, "could not set " + PROP_INTERRUPT + "; is the sepolicy for it installed?", e);
-        }
-        // The daemon is killed rather than finishing the session, so no
-        // 'pend' will arrive on the pipe; say so ourselves.
-        title = artist = album = null;
-        durationMs = 0;
-        onPlaying(false);
     }
 
     private void abandonFocus() {
@@ -229,59 +300,220 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         }
     }
 
-    // ---- metadata ---------------------------------------------------------
+    // ---- UxPlay: sessions -------------------------------------------------
 
     @Override
-    public void onTrack(String newTitle, String newArtist, String newAlbum, long newDurationMs) {
-        // A new track invalidates the old cover: the sender sends art after
-        // the tags, so anything still held belongs to the track before this
-        // one and would otherwise sit under the new title until it arrives.
-        if (!TextUtils.equals(newTitle, title) || !TextUtils.equals(newAlbum, album)) {
+    public void onClient(String name, String model) {
+        main.post(() -> {
+            clientName = name;
+            publishMetadata();
+            updateNotification();
+        });
+    }
+
+    @Override
+    public void onConnectionsClosed() {
+        audio.stop();
+        video.reset();
+        main.post(() -> {
+            MirrorActivity.finishIfShowing();
+            mirroring = false;
+            title = artist = album = null;
+            durationMs = 0;
+            setPlaying(false);
+        });
+    }
+
+    // ---- UxPlay: video ----------------------------------------------------
+
+    @Override
+    public void onVideoCodec(boolean h265) {
+        video.setCodec(h265);
+        main.post(this::showMirroring);
+    }
+
+    @Override
+    public void onVideoFrame(byte[] frame, long ptsNanos, boolean h265) {
+        video.queueFrame(frame, ptsNanos, h265);
+        if (!mirroring) {
+            main.post(this::showMirroring);
+        }
+    }
+
+    @Override
+    public void onVideoReset() {
+        video.reset();
+    }
+
+    @Override
+    public void onVideoSize(int width, int height) {
+    }
+
+    /**
+     * Mirroring takes the screen: whatever was showing, including the
+     * screensaver, gives way to it. That is an activity start from a
+     * background service, which needs START_ACTIVITIES_FROM_BACKGROUND, and
+     * waking a dream needs WRITE_DREAM_STATE; both are in the privapp
+     * allowlist.
+     */
+    private void showMirroring() {
+        if (mirroring) {
+            return;
+        }
+        mirroring = true;
+        try {
+            IDreamManager dreams = IDreamManager.Stub.asInterface(
+                    ServiceManager.getService(DreamService.DREAM_SERVICE));
+            if (dreams != null) {
+                dreams.awaken();
+            }
+        } catch (RemoteException | SecurityException e) {
+            Log.w(TAG, "could not wake from the screensaver", e);
+        }
+        startActivity(new Intent(this, MirrorActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
+    }
+
+    // ---- UxPlay: audio ----------------------------------------------------
+
+    @Override
+    public void onAudioFormat(int compressionType, int samplesPerFrame, boolean usingScreen) {
+        audio.configure(compressionType);
+        audio.start();
+        main.post(() -> {
+            setPlaying(true);
+            if (!usingScreen) {
+                showNowPlayingIfIdle();
+            }
+        });
+    }
+
+    @Override
+    public void onAudioPcm(byte[] pcm, long ptsNanos) {
+        audio.queuePcm(pcm, ptsNanos);
+    }
+
+    @Override
+    public void onAudioEncoded(byte[] frame, long ptsNanos, int compressionType) {
+        audio.queueEncoded(frame, ptsNanos);
+    }
+
+    @Override
+    public void onAudioFlush() {
+        audio.flush();
+    }
+
+    @Override
+    public void onVolume(float airplayDb) {
+        audio.setVolume(airplayDb);
+    }
+
+    // ---- UxPlay: metadata -------------------------------------------------
+
+    /** DAAP tags, as SET_PARAMETER carries them: usually inside an 'mlit'. */
+    @Override
+    public void onMetadata(byte[] dmap) {
+        if (dmap == null) {
+            return;
+        }
+        String[] fields = new String[3];
+        long[] duration = {0};
+        parseDmap(dmap, 0, dmap.length, fields, duration);
+        main.post(() -> {
+            if (!TextUtils.equals(fields[0], title) || !TextUtils.equals(fields[2], album)) {
+                artwork = null; // the old cover belongs to the old track
+                positionMs = 0;
+            }
+            title = fields[0];
+            artist = fields[1];
+            album = fields[2];
+            durationMs = duration[0];
+            Log.i(TAG, "track: " + title + " / " + artist + " / " + album);
+            publishMetadata();
+            publishState();
+            updateNotification();
+        });
+    }
+
+    private static void parseDmap(byte[] d, int off, int end, String[] fields, long[] duration) {
+        while (off + 8 <= end) {
+            String tag = new String(d, off, 4, StandardCharsets.US_ASCII);
+            int len = ((d[off + 4] & 0xFF) << 24) | ((d[off + 5] & 0xFF) << 16)
+                    | ((d[off + 6] & 0xFF) << 8) | (d[off + 7] & 0xFF);
+            int value = off + 8;
+            if (len < 0 || value + len > end) {
+                return;
+            }
+            switch (tag) {
+                case "mlit":
+                    parseDmap(d, value, value + len, fields, duration);
+                    break;
+                case "minm":
+                    fields[0] = new String(d, value, len, StandardCharsets.UTF_8);
+                    break;
+                case "asar":
+                    fields[1] = new String(d, value, len, StandardCharsets.UTF_8);
+                    break;
+                case "asal":
+                    fields[2] = new String(d, value, len, StandardCharsets.UTF_8);
+                    break;
+                case "astm":
+                    if (len == 4) {
+                        duration[0] = ((d[value] & 0xFFL) << 24) | ((d[value + 1] & 0xFFL) << 16)
+                                | ((d[value + 2] & 0xFFL) << 8) | (d[value + 3] & 0xFFL);
+                    }
+                    break;
+                default:
+                    break;
+            }
+            off = value + len;
+        }
+    }
+
+    @Override
+    public void onCoverArt(byte[] jpeg) {
+        Bitmap bitmap = jpeg == null ? null : BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+        main.post(() -> {
+            artwork = bitmap;
+            publishMetadata();
+        });
+    }
+
+    /**
+     * Three RTP timestamps at 44.1 kHz. They are 32-bit and senders start
+     * them at random, so a track can wrap mid-play; the distances are taken
+     * modulo 2^32.
+     */
+    @Override
+    public void onProgress(long start, long current, long end) {
+        long position = ((current - start) & 0xFFFFFFFFL) * 1000L / 44100;
+        long span = ((end - start) & 0xFFFFFFFFL) * 1000L / 44100;
+        main.post(() -> {
+            positionMs = position;
+            if (durationMs <= 0 && span > 0) {
+                durationMs = span;
+                publishMetadata();
+            }
+            publishState();
+        });
+    }
+
+    // ---- state ------------------------------------------------------------
+
+    private void setPlaying(boolean nowPlaying) {
+        playing = nowPlaying;
+        if (nowPlaying) {
+            requestFocus();
+        } else {
+            abandonFocus();
             artwork = null;
             positionMs = 0;
         }
-        title = newTitle;
-        artist = newArtist;
-        album = newAlbum;
-        durationMs = newDurationMs;
-        Log.i(TAG, "track: " + title + " / " + artist + " / " + album
-                + (durationMs > 0 ? " (" + durationMs + " ms)" : ""));
         publishMetadata();
         publishState();
         updateNotification();
     }
 
-    @Override
-    public void onProgress(long newPositionMs, long spanMs) {
-        positionMs = newPositionMs;
-        if (durationMs <= 0 && spanMs > 0) {
-            durationMs = spanMs;
-            publishMetadata();
-        }
-        publishState();
-    }
-
-    @Override
-    public void onArtwork(byte[] jpeg) {
-        Bitmap bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
-        if (bitmap == null) {
-            Log.w(TAG, "cover art was not a decodable image (" + jpeg.length + " B)");
-            return;
-        }
-        Log.i(TAG, "cover art " + bitmap.getWidth() + "x" + bitmap.getHeight());
-        artwork = bitmap;
-        publishMetadata();
-    }
-
-    @Override
-    public void onClientName(String name) {
-        clientName = name;
-        Log.i(TAG, "streaming from \"" + name + "\"");
-        publishMetadata();
-        updateNotification();
-    }
-
-    /** Rebuild the whole MediaMetadata from the cache; see the fields above. */
     private void publishMetadata() {
         if (session == null) {
             return;
@@ -309,45 +541,27 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         session.setMetadata(b.build());
     }
 
-    @Override
-    public void onPlaying(boolean nowPlaying) {
-        final boolean started = nowPlaying && !playing;
-        playing = nowPlaying;
-        if (nowPlaying) {
-            requestFocus();
-            if (started) {
-                showNowPlayingIfIdle();
-            }
-        } else {
-            abandonFocus();
-            artwork = null;
-            positionMs = 0;
-            publishMetadata();
+    private void publishState() {
+        if (session == null) {
+            return;
         }
-        publishState();
-        updateNotification();
+        // The position is paired with the time it was taken, so a client can
+        // extrapolate between the once-a-second updates instead of stepping.
+        session.setPlaybackState(new PlaybackState.Builder()
+                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_STOPPED,
+                        positionMs, playing ? 1.0f : 0.0f, SystemClock.elapsedRealtime())
+                .build());
     }
 
     // ---- screen -----------------------------------------------------------
 
     /**
-     * Put the now-playing panel on screen when a stream starts while the box
-     * is sitting on its home screen.
-     *
-     * AmbientDream is where the panel lives, and otherwise it only appears
-     * after the screensaver timeout -- fifteen minutes on this box -- so a
-     * stream started from a phone played with nothing on the television to
-     * say what it was. Starting the dream immediately fixes that. Only from
-     * the home screen itself: if someone is in an app, or has the panel open,
-     * the screen is theirs and is left alone.
-     *
-     * This calls DreamManager rather than firing TvSettings' SLEEP intent as
-     * the panel's Screensaver tile does: that is an activity start, and a
-     * background service may not start activities, foreground service or
-     * not. It needs WRITE_DREAM_STATE, and seeing another app's activity needs
-     * REAL_GET_TASKS; both are allowlisted in
-     * privapp_whitelist_org.lineageos.tv.airplay.xml, which this build
-     * enforces at boot.
+     * Put the now-playing panel on screen when music starts while the box is
+     * sitting on its home screen. AmbientDream is where the panel lives, and
+     * otherwise it only appears after the screensaver timeout. Only from the
+     * home screen itself: in an app, or with the panel open, the screen is
+     * left alone. Needs WRITE_DREAM_STATE and REAL_GET_TASKS, both
+     * allowlisted.
      */
     private void showNowPlayingIfIdle() {
         try {
@@ -355,10 +569,8 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
             if (power == null || !power.isInteractive()) {
                 return; // asleep: waking the television for this would be rude
             }
-            // Also covers "already dreaming": since Android 12 a dream runs as
-            // DreamActivity on top, so the home screen is not in front then.
-            // That saves asking isDreaming(), which needs READ_DREAM_STATE --
-            // a third privilege for a question already answered.
+            // Also covers "already dreaming": a dream runs as DreamActivity
+            // on top, so the home screen is not in front then.
             if (!homeIsInFront()) {
                 return;
             }
@@ -374,11 +586,7 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         }
     }
 
-    /**
-     * The home activity itself, not merely the launcher's package: the
-     * panel is the launcher's too (SystemOptionsActivity), and a stream
-     * starting while it is open should not snatch it away.
-     */
+    /** The home activity itself, not merely the launcher's package. */
     private boolean homeIsInFront() {
         final ResolveInfo home = getPackageManager().resolveActivity(
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
@@ -394,18 +602,6 @@ public class AirPlayService extends Service implements MetadataReader.Listener {
         final ComponentName top = tasks.get(0).topActivity;
         return top.getPackageName().equals(home.activityInfo.packageName)
                 && top.getClassName().equals(home.activityInfo.name);
-    }
-
-    private void publishState() {
-        if (session == null) {
-            return;
-        }
-        // The position is paired with the time it was taken, so a client can
-        // extrapolate between the once-a-second updates instead of stepping.
-        session.setPlaybackState(new PlaybackState.Builder()
-                .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_STOPPED,
-                        positionMs, playing ? 1.0f : 0.0f, SystemClock.elapsedRealtime())
-                .build());
     }
 
     // ---- notification -----------------------------------------------------

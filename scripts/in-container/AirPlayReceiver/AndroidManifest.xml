@@ -6,6 +6,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.lineageos.tv.airplay">
 
+    <!-- The AirPlay server listens for senders and advertises over mDNS. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Bringing the mirroring screen up from the service when a Mac or
+         iPhone starts mirroring. Privileged, so allowlisted. -->
+    <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Starting the screensaver when a stream begins on the home screen.
          Both are privileged, so both are in the privapp allowlist. -->
@@ -42,6 +48,17 @@
                 <action android:name="org.lineageos.tv.airplay.STOP" />
             </intent-filter>
         </service>
+
+        <!-- What a mirrored screen is shown on. Not exported: only the
+             service starts it. -->
+        <activity
+            android:name=".MirrorActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
         <receiver
             android:name=".BootReceiver"

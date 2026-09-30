@@ -1,0 +1,9 @@
+# UxPlay's native side calls these by name from JNI (uxplay_jni.c
+# cache_methods), which R8 cannot see: without this it strips them as unused,
+# and nativeStart fails with NoSuchMethodError on the first lookup.
+-keepclassmembers class org.lineageos.tv.airplay.UxPlay {
+    native <methods>;
+    private int nsdRegister(...);
+    private void nsdUnregister(...);
+    private void on*(...);
+}

@@ -7,21 +7,27 @@ android_app {
     resource_dirs: ["res"],
     manifest: "AndroidManifest.xml",
 
-    // platform_apis for SystemProperties, which is how the daemon is started:
-    // init owns the service, this only sets the property.
+    // platform_apis for SystemProperties (the tile's switch) and for
+    // IDreamManager, which starts the now-playing screensaver and wakes from
+    // it when mirroring begins.
     platform_apis: true,
     certificate: "platform",
     privileged: true,
     system_ext_specific: true,
 
+    // UxPlay's AirPlay server, in process: mirroring and audio. GPLv3, which
+    // makes this app as a whole GPLv3 too; its own sources say so.
+    jni_libs: ["libuxplay_jni"],
+    compile_multilib: "64",
+    optimize: {
+        proguard_flags_files: ["proguard.flags"],
+    },
+
     // The allowlist is not optional: this build sets
     // ro.control_privapp_permissions=enforce, under which a privileged app
     // requesting a privileged permission without an entry stops the device
     // booting -- platform signature or not.
-    required: [
-        "shairport-sync",
-        "privapp_whitelist_org.lineageos.tv.airplay",
-    ],
+    required: ["privapp_whitelist_org.lineageos.tv.airplay"],
 }
 
 prebuilt_etc {

@@ -60,6 +60,19 @@
            name="calicopizzadelivery/popt"
            revision="refs/heads/android-jetson-tv" />
 
+  <!-- AirPlay mirroring and audio receiver, which replaced shairport-sync
+       above (still synced, no longer built). UxPlay is GPLv3 and links the
+       platform's BoringSSL as the system crypto library; libplist
+       (LGPL-2.1+) is here because UxPlay needs it and AOSP does not ship it.
+       Both carry an Android port on android-jetson-tv, branched from the
+       pinned upstream releases v1.73.7 and 2.7.0. -->
+  <project path="external/uxplay" remote="github"
+           name="calicopizzadelivery/UxPlay"
+           revision="refs/heads/android-jetson-tv" />
+  <project path="external/libplist" remote="github"
+           name="calicopizzadelivery/libplist"
+           revision="refs/heads/android-jetson-tv" />
+
   <remove-project path="vendor/lineage" optional="true" />
   <project path="vendor/lineage" remote="github"
            name="calicopizzadelivery/android_vendor_lineage"

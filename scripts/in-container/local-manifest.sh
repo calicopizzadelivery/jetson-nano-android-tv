@@ -22,6 +22,8 @@ PROJECTS=(
     vendor/lineage
     external/shairport-sync
     external/popt
+    external/uxplay
+    external/libplist
 )
 
 note() { printf '    [manifest] %s\n' "$1"; }
