@@ -76,6 +76,14 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     /** Read by the Streaming tile. */
     static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
     private static final String PROP_NAME = "persist.jetsontv.airplay.name";
+    /**
+     * "on" (the default): a device must enter the code shown on screen the
+     * first time it connects. "off": anyone on the network may stream.
+     * Read when the receiver starts.
+     */
+    private static final String PROP_PIN = "persist.jetsontv.airplay.pin";
+    /** Every paired device has to enter the PIN again. */
+    private static final String ACTION_FORGET_DEVICES = "org.lineageos.tv.airplay.FORGET_DEVICES";
 
     private static final String CHANNEL_ID = "airplay";
     private static final int NOTIFICATION_ID = 1;
@@ -89,6 +97,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     private final AudioRenderer audio = new AudioRenderer();
     private final VideoRenderer video = new VideoRenderer();
     private UxPlay uxplay;
+    private ClientRegistry registry;
 
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
@@ -136,6 +145,10 @@ public class AirPlayService extends Service implements UxPlay.Listener {
             endSession("ended from the television");
             return START_STICKY;
         }
+        if (ACTION_FORGET_DEVICES.equals(action)) {
+            new ClientRegistry(this).forgetAll();
+            return START_STICKY;
+        }
         start();
         if (ACTION_SELFTEST.equals(action) && android.os.Build.IS_DEBUGGABLE) {
             int seconds = intent.getIntExtra("seconds", 10);
@@ -163,16 +176,20 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         publishState();
 
         setEnabled(true);
-        uxplay = new UxPlay(this, this);
+        registry = new ClientRegistry(this);
+        uxplay = new UxPlay(this, this, registry);
         control.execute(this::startServer);
     }
 
     private void startServer() {
         String name = SystemProperties.get(PROP_NAME, "Jetson TV");
+        boolean requirePin = !"off".equals(SystemProperties.get(PROP_PIN, "on"));
         int port = uxplay.start(name, deviceId(),
-                new File(getFilesDir(), "uxplay.pem").getAbsolutePath());
+                new File(getFilesDir(), "uxplay.pem").getAbsolutePath(), requirePin);
         if (port > 0) {
-            Log.i(TAG, "receiver enabled, advertising as \"" + name + "\" on port " + port);
+            Log.i(TAG, "receiver enabled, advertising as \"" + name + "\" on port " + port
+                    + (requirePin ? "; PIN required for new devices, " + registry.size()
+                            + " paired" : "; no PIN"));
         } else {
             Log.e(TAG, "the AirPlay server did not start");
         }
@@ -304,6 +321,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
 
     @Override
     public void onClient(String name, String model) {
+        PinActivity.dismiss();
         main.post(() -> {
             clientName = name;
             publishMetadata();
@@ -315,6 +333,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     public void onConnectionsClosed() {
         audio.stop();
         video.reset();
+        PinActivity.dismiss();
         main.post(() -> {
             MirrorActivity.finishIfShowing();
             mirroring = false;
@@ -322,6 +341,27 @@ public class AirPlayService extends Service implements UxPlay.Listener {
             durationMs = 0;
             setPlaying(false);
         });
+    }
+
+    // ---- UxPlay: pairing --------------------------------------------------
+
+    /**
+     * The code goes over whatever is on screen, screensaver included: it is
+     * only asked for when someone is trying to connect right now.
+     */
+    @Override
+    public void onPinRequested(String pin) {
+        main.post(() -> {
+            wakeFromDream();
+            startActivity(new Intent(this, PinActivity.class)
+                    .putExtra(PinActivity.EXTRA_PIN, pin)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
+        });
+    }
+
+    @Override
+    public void onPaired(String name) {
+        PinActivity.dismiss();
     }
 
     // ---- UxPlay: video ----------------------------------------------------
@@ -361,6 +401,13 @@ public class AirPlayService extends Service implements UxPlay.Listener {
             return;
         }
         mirroring = true;
+        wakeFromDream();
+        startActivity(new Intent(this, MirrorActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
+    }
+
+    /** Needs WRITE_DREAM_STATE, which is in the privapp allowlist. */
+    private void wakeFromDream() {
         try {
             IDreamManager dreams = IDreamManager.Stub.asInterface(
                     ServiceManager.getService(DreamService.DREAM_SERVICE));
@@ -370,8 +417,6 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         } catch (RemoteException | SecurityException e) {
             Log.w(TAG, "could not wake from the screensaver", e);
         }
-        startActivity(new Intent(this, MirrorActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION));
     }
 
     // ---- UxPlay: audio ----------------------------------------------------

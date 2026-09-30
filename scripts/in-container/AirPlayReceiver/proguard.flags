@@ -6,4 +6,5 @@
     private int nsdRegister(...);
     private void nsdUnregister(...);
     private void on*(...);
+    private boolean isRegistered(...);
 }

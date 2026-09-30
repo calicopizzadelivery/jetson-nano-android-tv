@@ -5,4 +5,6 @@
     <string name="receiver_ready">Ready to stream</string>
     <string name="receiver_streaming">Streaming from %1$s</string>
     <string name="unknown_device">a nearby device</string>
+    <string name="pin_title">AirPlay code</string>
+    <string name="pin_body">Enter this code on your iPhone, iPad or Mac to share to %1$s. Each device asks for it once.</string>
 </resources>

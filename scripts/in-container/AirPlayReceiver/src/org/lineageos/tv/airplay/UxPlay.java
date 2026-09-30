@@ -63,24 +63,36 @@ final class UxPlay {
         void onCoverArt(byte[] jpeg);
 
         void onProgress(long start, long current, long end);
+
+        /** A device asked to pair: put this code on the screen. */
+        void onPinRequested(String pin);
+
+        /** A device proved the PIN (name null), or a paired one named itself. */
+        void onPaired(String name);
     }
 
     private final NsdManager nsd;
     private final Listener listener;
+    private final ClientRegistry registry;
     private final SparseArray<NsdManager.RegistrationListener> registrations = new SparseArray<>();
     private int nextRegistrationId = 1;
     private int openConnections;
 
-    UxPlay(Context context, Listener listener) {
+    UxPlay(Context context, Listener listener, ClientRegistry registry) {
         this.nsd = context.getSystemService(NsdManager.class);
         this.listener = listener;
+        this.registry = registry;
     }
 
-    /** @return the port the server listens on, or a negative value on failure. */
-    int start(String name, String deviceId, String keyFile) {
+    /**
+     * @param requirePin a device must enter the code shown on screen the
+     *     first time; after that it is known by its key.
+     * @return the port the server listens on, or a negative value on failure.
+     */
+    int start(String name, String deviceId, String keyFile, boolean requirePin) {
         // 1920x1080, 60 Hz, 30 fps: UxPlay's defaults, and what the Tegra
         // decoder is proven at. Senders scale to fit.
-        return nativeStart(name, deviceId, keyFile, 1920, 1080, 60, 30);
+        return nativeStart(name, deviceId, keyFile, 1920, 1080, 60, 30, requirePin);
     }
 
     void stop() {
@@ -95,7 +107,7 @@ final class UxPlay {
     }
 
     private native int nativeStart(String name, String deviceId, String keyFile, int width,
-            int height, int refreshRate, int maxFps);
+            int height, int refreshRate, int maxFps, boolean requirePin);
 
     private native void nativeStop();
 
@@ -207,6 +219,28 @@ final class UxPlay {
     private void onClient(String name, String model, String deviceId) {
         Log.i(TAG, "connection from \"" + name + "\" (" + model + ")");
         listener.onClient(name, model);
+    }
+
+    // ---- called from native: pairing ----------------------------------
+
+    @SuppressWarnings("unused")
+    private void onPin(String pin) {
+        Log.i(TAG, "a device asked to pair; showing the code");
+        listener.onPinRequested(pin);
+    }
+
+    /** name is null when it has just proved the PIN, set when SETUP names it. */
+    @SuppressWarnings("unused")
+    private void onRegisterClient(String deviceId, String publicKey, String name) {
+        registry.remember(publicKey, deviceId, name);
+        listener.onPaired(name);
+    }
+
+    @SuppressWarnings("unused")
+    private boolean isRegistered(String publicKey) {
+        boolean known = registry.contains(publicKey);
+        Log.i(TAG, known ? "a paired device is back" : "an unpaired device skipped the PIN: refused");
+        return known;
     }
 
     // ---- called from native: video ------------------------------------

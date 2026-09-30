@@ -332,6 +332,10 @@ so do not reopen it.
   only a symlink to it), then reboot.
 - The ALAC decoder inherited from shairport could be driven to overrun the
   heap by any device on the LAN. It is fixed and fuzzed in the fork.
+- **New devices need a PIN shown on the TV** (`persist.jetsontv.airplay.pin`,
+  default on), once per device. Our fork enforces it; upstream only asked for
+  it. The code screen is verified, but pairing with a real client is not.
+  Both are in `docs/airplay.md`, "Pairing with a PIN".
 - The Shairport uid lesson below still stands for native audio clients, but
   the receiver is now an ordinary app uid playing through AudioTrack.
 

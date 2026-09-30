@@ -60,6 +60,17 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen" />
 
+        <!-- The pairing code, over whatever is on screen. Not exported: only
+             the service starts it. -->
+        <activity
+            android:name=".PinActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

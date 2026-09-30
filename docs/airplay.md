@@ -96,8 +96,54 @@ mDNS: lib/dnssd.c → dns_sd shim → UxPlay.nsdRegister → NsdManager
 - Advertised display: 1920x1080, 60 Hz, up to 30 fps, **H.264 only**. H.265
   is not offered. Nor is URL video casting (UxPlay's `-hls`): senders are
   offered mirroring and audio.
-- **No PIN.** As with an Apple TV set to "Anyone on the same network", any
-  device on the LAN can mirror. UxPlay has a PIN mode; it is not wired up.
+- **A PIN, once per device** (on by default). The first time a phone or Mac
+  connects, the TV shows a four-digit code to type on it. After that the device
+  is remembered. See "Pairing with a PIN" below.
+
+## Pairing with a PIN
+
+New devices must enter a code shown on the TV. It works the way an Apple TV
+set to require a passcode does: a new random code for each attempt, entered
+once per device. After that, the device is known by the Ed25519 key it proved
+the code with.
+
+| To | Do |
+| --- | --- |
+| Turn it off (anyone on the network may stream) | `setprop persist.jetsontv.airplay.pin off`, then restart the receiver (Streaming tile off and on) |
+| Turn it back on | `setprop persist.jetsontv.airplay.pin on`, then restart the receiver |
+| Make every device enter the code again | `am startservice -a org.lineageos.tv.airplay.FORGET_DEVICES -n org.lineageos.tv.airplay/.AirPlayService` |
+
+The log says which mode is in force when the receiver starts: `PIN required for
+new devices, N paired` or `no PIN`. Paired devices are in the app's
+`airplay_clients` shared preferences.
+
+**Enforced, not advisory.** UxPlay's own PIN mode only asked clients to pair.
+A client could skip pairing and go straight to streaming, and asking for
+pairing without ever requesting a code got it the code "0000". Our fork
+closes both gaps. In PIN mode, a connection gets no FairPlay setup and no
+`SETUP` until it has completed pair-verify. It must first either prove the
+code on that connection or be found among the paired devices. A code only
+exists from the moment it is shown until its first use, for at most two
+minutes. Pairing without a code is refused. The details are in the fork
+commit `Pin mode: make pairing required, not just offered`.
+
+The code screen (`PinActivity`) comes up over whatever is showing, the
+screensaver included. It goes away when the device pairs, when it gives up and
+disconnects, or after the same two minutes. Back hides it.
+
+**Verified here:** the receiver starts in either mode, and the advertisement
+switches between `pw=true` and `pw=false`. The code screen appears over the
+launcher in under half a second (`pin` self-test mode) and dismisses when the
+device counts as paired. Forgetting devices works.
+
+**Not verified:** the pairing itself with a real client. The enforcement
+code is compiled and running, but no client has yet paired with it. This is
+part of the hardware checklist. One thing to watch: in PIN mode the `_raop`
+record's `sf` flags read `0x4`, not the PIN value `0x8c`, because upstream
+sets `sf` twice and the second wins. That is exactly what upstream UxPlay
+advertises with `-pin`, the configuration its users run with iPhones, so it
+is left alone. If an iPhone connects without being asked for the code, look
+here first.
 
 ## Security: the ALAC decoder
 
@@ -149,6 +195,7 @@ adb shell am start-foreground-service -a org.lineageos.tv.airplay.SELFTEST \
 | `pcm` (default) | a moving test card, encoded by the Tegra's own H.264 encoder | 440 Hz as PCM, the ALAC route |
 | `eld` | the same | 440 Hz as AAC-ELD 480, the mirroring route |
 | `music` | none: the now-playing panel | 440 Hz as PCM, with a title, cover art and progress; the RTP clock wraps past 2³² three seconds in |
+| `pin` | the pairing code screen with a sample code, then paired after `seconds` | none |
 
 `eld` needs `files/selftest-eld.bin`. **Android's own AAC encoder frames ELD
 at 512 samples** (config `f8e84000`), while senders use 480 (`f8e85000`). The
@@ -213,7 +260,18 @@ Keep a log open first:
 adb logcat -s AirPlay UxPlay
 ```
 
-1. **Mirroring.** On the iPhone, open Control Center → Screen Mirroring →
+1. **Pairing, first.** With the PIN on (the default), the first attempt from
+   each device should put a four-digit code on the TV and ask for it on the
+   device. Check each of these:
+   - A wrong code is refused.
+   - The right one connects. The log says `remembering <device id>`, and the
+     code screen goes away.
+   - A second connection from the same device asks for nothing (`a paired
+     device is back`).
+   - After `FORGET_DEVICES`, the device asks again.
+   - With `persist.jetsontv.airplay.pin off` and the receiver restarted, no
+     code is asked for at all.
+2. **Mirroring.** On the iPhone, open Control Center → Screen Mirroring →
    Jetson TV. Expect `connection from "<phone>"`, then `video decoder
    OMX.Nvidia.h264.decode`, then `mirrored picture is WxH`. Once the phone
    plays sound you should also see `AAC decoder … for AAC-ELD`. Then:
@@ -221,13 +279,13 @@ adb logcat -s AirPlay UxPlay
    - Play a video with speech to check lip sync.
    - Stop from the phone, and separately with Back on the remote. Each should
      return to where you were, and the phone should show mirroring stopped.
-2. **Audio.** In Music, tap AirPlay → Jetson TV. The now-playing panel should
+3. **Audio.** In Music, tap AirPlay → Jetson TV. The now-playing panel should
    come up from the home screen with the track. Try the phone's volume slider,
    pause and skip. The log names the codec: ALAC arrives as PCM, and AAC-LC
    shows `AAC decoder … for AAC-LC`.
-3. **Mac.** Control Center → Screen Mirroring → Jetson TV (mirror or extend),
+4. **Mac.** Control Center → Screen Mirroring → Jetson TV (mirror or extend),
    and Sound → output → Jetson TV.
-4. **If something fails**, save `adb logcat -d` and look at the `UxPlay` lines
+5. **If something fails**, save `adb logcat -d` and look at the `UxPlay` lines
    around the failure. Pairing and FairPlay problems show there, before
    anything reaches the renderers.
 
@@ -271,14 +329,15 @@ rejects the stale ones and runs the app interpreted.
 1. **Validate with real Apple hardware — the open item for this whole
    receiver.** Everything so far runs without a sender: the self-test drives
    the renderers, and the protocol side is known only to start, advertise and
-   answer `GET /info`. Pairing, FairPlay, decryption, the clock sync, and the
-   lip sync between an Apple sender's audio and video timestamps have never
-   met a real device. When an iPhone, iPad or Mac is available (a Mac is not
+   answer `GET /info`. PIN pairing, FairPlay, decryption, the clock sync,
+   and the lip sync between an Apple sender's audio and video timestamps have
+   never met a real device. When an iPhone, iPad or Mac is available (a Mac is not
    required: an iPhone alone can mirror from Control Center), run the
    checklist in "Testing with an iPhone or Mac" above. Record the `video:`
    and `audio:` timing lines, and whether speech is in sync. Until then, treat
    the AirPlay feature as unproven.
-2. **An optional PIN**, for networks where "anyone on the LAN" is too open.
+2. **A way to manage paired devices from the TV**, not just adb: forget all,
+   and the PIN on or off. The Streaming tile is the natural home.
 3. **Clean up after Shairport** in the porg fork: the `shairport` SELinux
    domain, the `system_ext_airplay` uid (7500) in `config.fs` and the
    `jetsontv.airplay.interrupt` label. None of it is used any more. Keep the

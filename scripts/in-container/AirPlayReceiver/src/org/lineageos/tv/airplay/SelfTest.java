@@ -42,6 +42,8 @@ import java.util.Locale;
  *          tests/eldgen and pushed to files/selftest-eld.bin.
  *   music  no picture: the tone as PCM with a title, cover art and progress,
  *          as the Music app sends them
+ *   pin    no stream: the pairing code screen, as a first-time device asks
+ *          for it, then paired after the given seconds
  *
  * Only reachable on debuggable builds:
  *
@@ -78,6 +80,16 @@ final class SelfTest implements Runnable {
 
     @Override
     public void run() {
+        if (mode.equals("pin")) {
+            listener.onPinRequested("4827");
+            try {
+                Thread.sleep(seconds * 1000L);
+            } catch (InterruptedException ignored) {
+            }
+            listener.onPaired(null);
+            Log.i(TAG, "self-test done");
+            return;
+        }
         boolean mirroring = !mode.equals("music");
         MediaCodec encoder = null;
         Surface input = null;
