@@ -82,6 +82,11 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     Barriers do not help asynchronous saves such as `SharedPreferences.apply()`,
     which the AirPlay paired-devices list uses. See `docs/emmc-writes.md`,
     "Power loss".
+18b. **Source mirrors for third-party apps, before any image is published.**
+    Moonlight (GPL-3.0) now ships in the image. Mirror moonlight-android at
+    v12.2 with its submodules, and do the same for each app added to
+    `PrebuiltApps/apps.json` (Kodi, if it goes in). See
+    `docs/prebuilt-apps.md`.
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.
@@ -89,7 +94,7 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 ## Game streaming (new, 30 September)
 
 20. **Moonlight (with a Sunshine host) and Steam Link.** *Moonlight measured
-    30 September: viable.* 1080p60 is solid (60/60 fps, 0% drops, ~1 ms
+    30 September: viable, and now in the image (`docs/prebuilt-apps.md`).* 1080p60 is solid (60/60 fps, 0% drops, ~1 ms
     decode). 4K60 decodes at a full 60 fps too, at the same ~70%-of-400% CPU.
     See `docs/game-streaming.md`. Still to do:
     - 4K against a real gaming PC with GPU capture: thebe's rootless

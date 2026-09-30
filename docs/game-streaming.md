@@ -18,7 +18,7 @@ SUPER, NVENC) over wired gigabit Ethernet. Measured 30 September 2026.
 
 | Where | What |
 | --- | --- |
-| Jetson | Moonlight for Android v12.2 (`app-nonRoot-release.apk` from moonlight-stream/moonlight-android, SHA-256 checked), installed as an ordinary app. It found thebe by mDNS on its own. |
+| Jetson | Moonlight for Android v12.2 (`app-nonRoot-release.apk` from moonlight-stream/moonlight-android, SHA-256 checked). For these tests it was installed as an ordinary app; it has since been built into the image (`docs/prebuilt-apps.md`). It found thebe by mDNS on its own. |
 | thebe | Sunshine v2026.914.233613 AppImage (LizardByte/Sunshine, SHA-256 checked), run as the desktop user with no root. It captures a nested X display (Xephyr `:99`), so nothing of the real desktop is streamed, and encodes with NVENC. Keyboard, mouse, gamepad and audio are disabled, and the web UI answers on localhost only. |
 | Test picture | `scripts/gamestream/pattern.py`: a moving pattern with a **timing strip**, 34 black/white blocks carrying thebe's clock in ms and a frame counter, redrawn 60 times a second. |
 | Measurement | `scripts/gamestream/measure.py`: reads the strip back off the Jetson's HDMI through the MS2109 on thebe, on the same clock. Arrival time minus strip time is end-to-end latency. The counter shows repeated or skipped frames. It also snapshots Moonlight's performance overlay. |

@@ -134,9 +134,18 @@ install_vendor_mk() {
     return 0
 }
 
+# Third-party apps built into the image (Moonlight, ...), pinned in
+# PrebuiltApps/apps.json: fetched into /dlcache, checked, and turned into
+# modules under vendor/jetson-tv/PrebuiltApps. See prebuilt_apps.py for why
+# it takes the shape it does.
+install_prebuilt_apps() {
+    SRC="${SRC}" DLCACHE="${DLCACHE:-/dlcache}" python3 /opt/jetson-tv/prebuilt_apps.py
+}
+
 install_decodetest
 install_raopsend
 install_ambient_dream
 install_airplay_receiver
+install_prebuilt_apps
 install_vendor_mk
 note "done"

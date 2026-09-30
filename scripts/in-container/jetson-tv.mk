@@ -12,3 +12,9 @@
 PRODUCT_PACKAGES += \
     AirPlayReceiver \
     AmbientDream
+
+# Third-party apps, from PrebuiltApps/apps.json via prebuilt_apps.py, which
+# tree-local-changes.sh runs before every build. A plain include, not an
+# -include: a build that skipped that step must fail, not quietly ship
+# without them.
+include vendor/jetson-tv/PrebuiltApps/prebuilt-apps.mk

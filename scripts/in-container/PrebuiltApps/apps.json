@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Third-party apps built into the image, pinned. prebuilt_apps.py fetches each",
+    "APK and licence into /dlcache (checked against these sha256s), and generates",
+    "the modules in vendor/jetson-tv/PrebuiltApps. The binaries never enter this",
+    "repo. Each is shipped exactly as its authors signed it, so their own later",
+    "releases still install over it as updates. 'source' is what a published",
+    "image must point to for the GPL: see docs/prebuilt-apps.md.",
+    "uses_libs/optional_uses_libs must match the APK's <uses-library> tags (aapt2 dump badging), or Soong refuses it."
+  ],
+  "apps": [
+    {
+      "name": "Moonlight",
+      "package": "com.limelight",
+      "version": "12.2",
+      "apk": {
+        "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.2/app-nonRoot-release.apk",
+        "sha256": "a871f6190365386ef3ac5722a016d4da015ee1555631ec257f6e5dc3f4a45fe0"
+      },
+      "license": {
+        "kind": "SPDX-license-identifier-GPL-3.0",
+        "url": "https://raw.githubusercontent.com/moonlight-stream/moonlight-android/v12.2/LICENSE.txt",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      },
+      "source": "https://github.com/moonlight-stream/moonlight-android/tree/v12.2 (b48494cb96bff23d8886c4775cc4f39a1075495d, with submodules)",
+      "optional_uses_libs": [
+        "com.sec.android.app.multiwindow"
+      ]
+    }
+  ]
+}
