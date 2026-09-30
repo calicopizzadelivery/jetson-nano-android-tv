@@ -1,0 +1,76 @@
+From a8376b1d9c1546c64fe8f2fcad81147054b1aee5 Mon Sep 17 00:00:00 2001
+From: flippy <flippy@thebe.tail087954.ts.net>
+Date: Tue, 29 Sep 2026 22:51:45 -0500
+Subject: [PATCH 5/5] porg: the policy the AirPlay daemon needs once audio
+ actually flows
+
+None of this was reachable while the daemon ran as audioserver, since
+that hung before a track existed. Collected in one permissive session
+covering service start, stream, metadata and teardown, then granted
+individually:
+
+- audioserver -> shairport binder calls. The mixer thread (AudioOut_*)
+  calls back into its clients; audioserver.te grants that only for apps
+  and binderservicedomain. Denied, the first session after boot played
+  a few seconds and stopped.
+
+- shairport -> audio_service, and binder calls to system_server.
+  libaudioclient's PlayerBase registers every AAudio stream with
+  AudioService, which is how focus and ducking see the player at all.
+
+- shairport -> mediametrics. Nothing here needs the metrics, but the
+  lookup must be allowed: a refused find looks to the client exactly
+  like a service that has not started, so it waited five seconds,
+  twice, inside openStream, and the first session was ten seconds
+  overdue against a two-second buffer. dontaudit was tried first and
+  only hid the cause.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I03550953cd1250833510522f1925dd5c21d5ebfe
+---
+ sepolicy/private/shairport.te | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/sepolicy/private/shairport.te b/sepolicy/private/shairport.te
+index 2fdfee2..cba33b4 100644
+--- a/sepolicy/private/shairport.te
++++ b/sepolicy/private/shairport.te
+@@ -15,11 +15,34 @@ net_domain(shairport)
+ allow shairport self:udp_socket { create bind read write setopt getopt getattr };
+ allow shairport self:tcp_socket { create bind listen accept read write setopt getopt getattr shutdown };
+ 
+-# Audio goes out through AAudio, which is a binder client of audioserver.
++# Audio goes out through AAudio, which is a binder client of audioserver --
++# and audioserver calls back in: the mixer thread (AudioOut_*) makes binder
++# calls into its clients during playback. audioserver.te grants that for apps
++# and binderservicedomain only, and without it here the first session after
++# boot played for a few seconds and then stopped for good. None of this was
++# reachable while the daemon ran as the audioserver uid, because that hung in
++# openStream before ever creating a track.
+ binder_use(shairport)
+ binder_call(shairport, audioserver)
++binder_call(audioserver, shairport)
+ allow shairport audioserver_service:service_manager find;
+ 
++# libaudioclient's PlayerBase registers every AAudio stream with AudioService
++# in system_server. That registration is what lets focus and ducking see the
++# player at all; without it the lookup fails with "binding to audio service
++# failed" and the stream is invisible to the rest of the audio policy.
++allow shairport audio_service:service_manager find;
++binder_call(shairport, system_server)
++
++# AudioTrack reports usage metrics to mediametrics, and the lookup has to be
++# allowed even though nothing here needs the metrics. A refused find looks to
++# the client exactly like a service that has not started yet, so it waits --
++# five seconds, twice, inside openStream -- and the first session after the
++# daemon starts is ten seconds overdue against a two-second buffer: silence.
++# Silencing the denial with dontaudit, which was tried first, hid the cause.
++allow shairport mediametrics_service:service_manager find;
++binder_call(shairport, mediametrics)
++
+ # Its optional configuration file.
+ allow shairport system_file:dir search;
+ 
+-- 
+2.43.0
+

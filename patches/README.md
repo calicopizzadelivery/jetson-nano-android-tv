@@ -308,3 +308,26 @@ reads back.
 Upstreamable as-is: the tile resolves each receiver's service before offering
 it and hides itself when none is installed, so the patch is inert on a tree
 without them.
+
+## porg/0003 — label shairport-sync by its real path
+
+porg has no separate system_ext partition; `/system_ext` is a symlink to
+`/system/system_ext`, and file contexts are matched against the real path when
+the image is built. The `/system_ext/...` entry matched nothing, the binary
+shipped as `system_file`, and init could not transition it into the `shairport`
+domain. Both path forms are listed. (Exported on 29 September into the fork's
+working tree by mistake; it only reached this directory on the 30th.)
+
+## porg/0004 — a uid of its own for the AirPlay receiver
+
+`AID_SYSTEM_EXT_AIRPLAY` (7500) in a porg `config.fs`. The daemon cannot run as
+`audioserver` — libaudioclient treats that uid as the audioserver process
+itself and hangs waiting for an in-process service — and should not run as
+`media`, which audioserver trusts to attribute audio to other uids. See
+`docs/streaming-targets.md`, "Why it was silent".
+
+## porg/0005 — the policy the AirPlay daemon needs once audio flows
+
+audioserver's callbacks into the daemon, PlayerBase's registration with
+AudioService, and mediametrics — the last because a refused lookup costs ten
+seconds inside `openStream`, not because anything uses the metrics.

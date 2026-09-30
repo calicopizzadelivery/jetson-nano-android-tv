@@ -95,23 +95,24 @@ SELinux policy lives in `device/nvidia/porg/sepolicy/private` — porg is ours,
 a vendor component, at which point executing its own binary trips three
 neverallows in `domain.te` about vendor components touching `/system`.
 
-### End to end
+### End to end — a correction
 
-Proven on `lineage_sdk_tv_x86_64`: a 440 Hz tone sent over AirPlay arrives at a
-Bluetooth speaker.
+This section used to say the chain was proven on `lineage_sdk_tv_x86_64`, on
+the strength of a Bluetooth speaker's received-byte counter moving by 121,528
+bytes during a 10-second stream against a flat idle baseline. **That was a
+false positive**, and it hid two real defects for a week.
 
-    sender (raopsend) -> RTSP/RTP -> shairport-sync -> AAudio
-      -> AudioFlinger -> A2DP -> Bluetooth speaker
+The counter measured the A2DP link waking up, not the tone. SBC is constant
+bit rate, so encoded silence and encoded signal cost the same bytes, and the
+receiver *does* open and start an AAudio stream at the beginning of every
+session — which is enough to bring the A2DP output out of standby. Nothing was
+ever written to that stream (see "Why it was silent" below). The idle baseline
+was taken with no stream open at all, so it could not tell the difference.
 
-The receiver logs `aaudio: started 2 channels at 44100 fps, device 26`, the
-audio route is `bt_a2dp`, and the speaker's received-byte counter moves by
-121,528 bytes in 148 RTP packets across a 10-second stream — against a
-measured idle baseline where it does not move at all. The daemon survives the
-session and does not crash.
-
-That is the whole chain, including the output picker: AirPlay audio follows
-whatever output was chosen in the panel, which is exactly what the AAudio
-back end was for.
+The lesson is in the method: a byte counter or a level meter cannot tell
+silence from signal. What can is a frequency check on the captured audio —
+the tests below look for 440 Hz specifically, and on porg the capture comes
+off the HDMI output through the MS2109, which is what the viewer hears.
 
 ### Testing it
 
@@ -383,55 +384,110 @@ Two habits worth keeping from this:
 - **Read `init.svc.<name>` more than once.** A crash loop and a healthy daemon
   look identical in a single sample.
 
-### Audio does not yet reach the speakers, and where it stops
+### Why it was silent, and then why it dropped out
 
-The receiver runs on porg and the metadata path is proven, but no stream has
-yet produced sound. What the bench has ruled out, each by measurement:
+**Status: working on porg.** A 12-second 440 Hz stream from `raopsend`
+arrives on the television's HDMI audio as 12.0 s of tone at the level sent,
+with no gaps, in every session including the first after boot, alongside the
+now-playing panel — daemon started by init as its own uid under enforcing
+SELinux, no denials. Verified by frequency analysis of the MS2109's audio
+capture, which a byte counter or level meter cannot fake.
 
-- **Not the box's HDMI audio.** Android's own UI click sounds record cleanly
-  off the MS2109's ALSA capture (`arecord -D plughw:2,0`), and AudioFlinger's
-  only output thread is `AUDIO_DEVICE_OUT_HDMI` with master volume 1.0 and
-  nothing muted. That also settles the long-standing "HDMI audio" item for
-  2-channel LPCM, though not for bitstream passthrough.
-- **Not SELinux.** Permissive changes nothing, and there are no denials.
-- **Not our AAudio backend.** The daemon reports
-  `aaudio: started 2 channels at 44100 fps`, and AudioFlinger shows the track
-  created and in state A — with `FrmRdy 0`, meaning not one frame was ever
-  written to it. Running the same daemon with `-o stdout` produces a
-  zero-length file, so the silence survives replacing the backend entirely.
-- **Not `raopsend`'s recent changes.** The pre-change sender, rebuilt from
-  `858597c`, behaves identically.
-- **Not porg.** The emulator now behaves identically too.
+Getting there took seven defects, most of them hidden behind the one before.
+In the order they surfaced:
 
-Where it actually stops: `debuggerd -b` on the daemon shows the player thread
-parked in `player_thread_func` on a `pthread_cond_timedwait` — inside
-`buffer_get_frame()`, waiting for a frame to become due. Packets are arriving
-(the RTP receiver threads are in `recvfrom`, and shairport's own stats report
-2,500 packets at the expected 7,982 µs spacing), the session reaches
-`player_play`, `Play begin` and `synced by first packet, timestamp 0, seqno 0`
-— and then nothing is ever scheduled.
+**1. `raopsend` never sent RTP SYNC.** `debuggerd -b` put the player in
+`buffer_get_frame()`, which is gated on `have_timestamp_timing_information()`.
+For Classic AirPlay that becomes true only when a SYNC packet (`0x80 0xd4` on
+the control port) arrives after a timing exchange — the sender's statement
+that "at this NTP time, frame `now − latency` is playing". Without it the
+player waits forever and writes nothing, not even lead-in silence, to *any*
+backend: `-o stdout` produced zero bytes. ("synced by first packet" in the
+log is buffer sequencing, a different thing.) `raopsend` now sends one before
+the first packet and once a second after, and drains the latency before
+TEARDOWN. It also sends a volume: without one, Shairport's default of −24 is
+about −55 dB, and the tone arrived at RMS 23.
 
-The likeliest remaining cause is that **`raopsend` never sends RTP SYNC
-packets**. A real sender emits one on the control port about once a second,
-carrying the mapping from RTP timestamp to NTP time, and that is what tells
-the player when each frame is due. Shairport's "synced by first packet"
-fallback covers the absence well enough to start a session but perhaps not to
-schedule one. That is the next thing to implement and test.
+**2. The daemon ran as `audioserver`**, which libaudioclient takes to mean
+"this process *is* audioserver": its service getters skip the binder lookup
+and wait INT32_MAX ms for an in-process service that never arrives, so
+`openStream` hung. A/B'd with only the uid changing: 1041 never produced a
+track in four of four sessions; any other uid played every time. It now runs
+as **`system_ext_airplay` (7500)**, a uid from the range reserved for
+system_ext, defined in porg's `config.fs` so it resolves from
+`/system_ext/etc/passwd` beside the binary (`patches/porg/0004`). Not `media`,
+which would have worked: audioserver trusts media to attribute tracks and
+recordings to other uids, and this daemon parses untrusted network input. Its
+only group is `inet`.
 
-**One defect found and fixed on the way.** The timing responder was polled once
-per audio packet from inside the send loop, so a reply went out only at the
-next packet boundary and the round trip a receiver measured sawtoothed from 0
-to 8 ms on *loopback*. Shairport filters clock samples by round-trip time, so
-it rejected all of them — "not enough samples to estimate drift — remaining at
-0.00 ppm", forever. The responder is now its own thread blocking on `recvfrom`,
-and the measured round trips are a steady 0.17–0.31 ms with no rejected
-samples. That was not the whole story, but it was wrong.
+**3. Three policy gaps**, unreachable until the daemon got past `openStream`
+(`patches/porg/0005`), collected in one permissive session and granted
+individually: audioserver's mixer thread calling back into the client;
+PlayerBase registering the stream with AudioService in system_server, which
+is how focus and ducking see the player; and mediametrics. That last one
+matters although nothing needs the metrics — a refused `find` looks to the
+client like a service that has not started, so it waited five seconds,
+*twice*, inside `openStream`, and the first session after the daemon started
+was ten seconds overdue against a two-second buffer. I first silenced it with
+`dontaudit`, which only hid the cause.
+
+**4. The service crashed at boot.** Android 15 refuses a `mediaPlayback`
+foreground service started from `BOOT_COMPLETED`, so the boot receiver
+crashed it twice and ActivityManager backed off for 30 minutes — daemon up,
+nothing holding focus or publishing metadata. It is `specialUse` now, which
+is also the honest type: it spends its life waiting for a sender, and the
+audio is played by the daemon, not this app.
+
+**5. `raopsend` started RTP timestamps and sequence numbers at 0**, which
+Shairport uses as "unset": its first-packet setup re-ran every loop pass and
+the first packets were misordered. Real senders start at random, and so does
+`raopsend` now (`--rtp-start` forces a value; `0xFFFF0000` wraps 32 bits a
+second in). The same wrap would have broken `MetadataReader`'s progress
+arithmetic with a real sender; it is modulo 2³² now. This was not the cause of
+the dropouts, which is worth saying because it looked like it.
+
+**6. `delay()` left out the output path.** It reported
+`framesWritten − framesRead`: what sits in AAudio's client buffer, not the
+~50 ms of mixer, HAL and HDMI behind it. It now projects the presentation
+timestamp from `AAudioStream_getTimestamp()` to now, as the ALSA backend does
+with `snd_pcm_status`. The player's steady-state sync error went to 36 µs.
+
+**7. The dropouts: the backend blocked under `ab_mutex`.** Instrumenting the
+player showed the sync error *stepping* by −48, −96, −136 ms, each step a run
+of 6–11 packets reported "not ready" — never arrived. On loopback. The kernel's
+`RcvbufErrors` rose by exactly the number of missing packets. Cause: during
+the two-second lead-in the player writes silence 100 ms at a time *while
+holding `ab_mutex`*, which the RTP receiver needs to file each packet.
+AAudio's ~32 ms buffer made every write block ~100 ms, the receiver filed one
+packet per write while twelve arrived, and the 212 KB socket buffer
+overflowed. The lost packets were exactly the ones due to play first.
+
+A bigger AAudio buffer does not fix it: an AudioTrack will not start pulling
+until its start threshold — by default the whole buffer — is filled, the NDK
+cannot change the threshold, and with three seconds of buffer the track never
+started. So `play()` now copies into a three-second ring of the backend's own
+and returns at once, and AAudio drains it from its data callback. Kernel
+drops, missing packets and resyncs all went to zero.
+
+**What the first "end to end" was.** The byte counter on the emulator's
+Bluetooth speaker moved because the daemon opens and starts its stream at the
+beginning of every session, which brings A2DP out of standby — see the
+correction under "End to end" above.
+
+**Earlier on the way.** The timing responder was polled once per audio packet,
+so loopback round trips sawtoothed from 0 to 8 ms and Shairport rejected every
+clock sample. It is its own thread now, at a steady 0.2 ms.
 
 ### Still to do
 
-1. **Make a stream audible**, starting with RTP SYNC packets in `raopsend` —
-   see the section above for everything already ruled out.
-2. **FCast**, for video.
-3. **Bonjour advertisement.** The daemon uses the bundled tinysvcmdns; nothing
+1. **A real sender.** Everything so far is `raopsend` on loopback. An iPhone
+   exercises what it cannot: ALAC, encryption (`a=rsaaeskey`), DACP remote
+   control, and a network with real jitter and loss.
+2. **Real-time priority.** The player thread asks for SCHED_FIFO and is
+   refused (`pthread_create sched_setscheduler ... Operation not permitted`);
+   harmless so far, but worth `capabilities SYS_NICE` if audio ever glitches
+   under load.
+3. **FCast**, for video.
+4. **Bonjour advertisement.** The daemon uses the bundled tinysvcmdns; nothing
    has yet confirmed a real iOS sender discovers the box by itself, as opposed
    to being pointed at it.

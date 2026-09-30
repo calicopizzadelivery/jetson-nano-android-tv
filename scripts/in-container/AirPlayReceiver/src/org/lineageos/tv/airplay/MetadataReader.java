@@ -269,9 +269,15 @@ final class MetadataReader implements Runnable {
             long start = Long.parseLong(parts[0].trim());
             long current = Long.parseLong(parts[1].trim());
             long end = Long.parseLong(parts[2].trim());
-            long positionMs = (current - start) * 1000L / RAOP_FRAME_RATE;
-            long spanMs = durationMs > 0 ? durationMs : (end - start) * 1000L / RAOP_FRAME_RATE;
-            listener.onProgress(Math.max(0, positionMs), Math.max(0, spanMs));
+            // RTP timestamps are 32-bit and senders start them at random, so
+            // a track can wrap past 2^32 mid-play. Plain subtraction then goes
+            // hugely negative and the progress bar vanishes; the distance
+            // modulo 2^32 is the real one.
+            long positionFrames = (current - start) & 0xFFFFFFFFL;
+            long spanFrames = (end - start) & 0xFFFFFFFFL;
+            long positionMs = positionFrames * 1000L / RAOP_FRAME_RATE;
+            long spanMs = durationMs > 0 ? durationMs : spanFrames * 1000L / RAOP_FRAME_RATE;
+            listener.onProgress(positionMs, spanMs);
         } catch (NumberFormatException e) {
             // Not all senders send frame counts here; ignore rather than log
             // once a second.

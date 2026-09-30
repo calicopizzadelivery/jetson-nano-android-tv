@@ -1,0 +1,69 @@
+From 6a8c73277686328a6bc64fef3185ec51f79d6642 Mon Sep 17 00:00:00 2001
+From: flippy <flippy@thebe.tail087954.ts.net>
+Date: Tue, 29 Sep 2026 22:51:45 -0500
+Subject: [PATCH 4/5] porg: a uid of its own for the AirPlay receiver
+
+The daemon cannot run as audioserver: libaudioclient treats that uid as
+"this process is audioserver", skips the binder lookup for AudioFlinger
+and AudioPolicyService, and waits INT32_MAX ms for an in-process service
+that never arrives -- so every stream hung in openStream. Nor should it
+be media, which audioserver trusts to attribute tracks and recordings
+to other uids; this daemon parses untrusted network input.
+
+AID_SYSTEM_EXT_AIRPLAY (7500) comes from the range the platform reserves
+for system_ext, so the generator emits it into /system_ext/etc/passwd on
+the same partition as the binary, and bionic resolves it there as
+"system_ext_airplay". The generator requires the name to carry the
+partition prefix and the value to sit in that partition's range.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Iaddee8eec25ecd76eb2241a29f13f20b28c5dd47
+---
+ BoardConfig.mk |  3 +++
+ config.fs      | 20 ++++++++++++++++++++
+ 2 files changed, 23 insertions(+)
+ create mode 100644 config.fs
+
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index b9b5e8e..8e2e8d3 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -21,6 +21,9 @@ include device/nvidia/foster/BoardConfig.mk
+ # porg feature.
+ SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += device/nvidia/porg/sepolicy/private
+ 
++# ...and its uid; see config.fs for why it needs one of its own.
++TARGET_FS_CONFIG_GEN += device/nvidia/porg/config.fs
++
+ # Assert
+ TARGET_OTA_ASSERT_DEVICE := porg
+ 
+diff --git a/config.fs b/config.fs
+new file mode 100644
+index 0000000..fb40e3f
+--- /dev/null
++++ b/config.fs
+@@ -0,0 +1,20 @@
++# The AirPlay receiver's own uid.
++#
++# It cannot run as audioserver, which is what it first shipped as, and the
++# reason is not permissions. libaudioclient decides by uid whether it is
++# running *inside* audioserver: AudioSystem's service getters check
++# `getuid() == AID_AUDIOSERVER` and, if so, skip the binder lookup and wait up
++# to INT32_MAX ms for the in-process service that only audioserver itself
++# installs. Any other process with that uid waits forever in
++# AAudioStreamBuilder_openStream -> AudioSystem::getMmapPolicyInfos, with no
++# error and no denial.
++#
++# Nor should it be media: audioserver trusts media (and system, and root) to
++# attribute tracks and recordings to *other* uids, and this daemon parses
++# untrusted network input. So it gets a uid of its own, from the range the
++# platform reserves for system_ext (7500-7999), which also keeps it on the
++# same partition as the binary. The generator requires the name to carry the
++# partition prefix, and bionic resolves it from /system_ext/etc/passwd as
++# "system_ext_airplay".
++[AID_SYSTEM_EXT_AIRPLAY]
++value: 7500
+-- 
+2.43.0
+

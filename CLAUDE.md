@@ -288,6 +288,25 @@ stream raised HPD, so its menu was unreadable — colour bars only. See the HPD
 note in `jetson-flash-node/tools/hdmi.py`: to see anything, hold one capture
 stream open and power-cycle *into* it.
 
+### AirPlay audio works on porg (2026-09-30)
+
+The receiver plays: a 12 s stream arrives on the TV's HDMI as 12.0 s of tone,
+no gaps, every session, under enforcing SELinux, started by init as its own uid.
+Seven defects stood between here and there; `docs/streaming-targets.md`, "Why
+it was silent, and then why it dropped out", has each with its evidence. Three
+worth knowing before touching audio on this box again:
+
+- **Never run a native audio client as uid `audioserver`.** libaudioclient
+  decides by uid that it *is* audioserver and waits forever for an in-process
+  service. The AirPlay daemon is `system_ext_airplay` (7500, porg `config.fs`).
+- **A refused `service_manager find` is not harmless.** The client cannot tell
+  it from "not started yet" and waits 5 s per attempt. `dontaudit` hides it.
+- **Verify audio by frequency, not by bytes or level.** Record the MS2109
+  (`arecord -D plughw:2,0 -f S16_LE -r 48000 -c 2`) and look for the tone.
+  A byte counter on the emulator's Bluetooth speaker once "proved" a chain
+  that was silent: starting a stream wakes A2DP, and SBC silence costs the
+  same bytes as signal.
+
 ### On-device findings (2026-09-25)
 
 **There is a root-capable shell on the serial console.** This is a userdebug

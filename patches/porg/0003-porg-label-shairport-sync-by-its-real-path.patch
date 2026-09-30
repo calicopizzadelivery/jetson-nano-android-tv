@@ -1,0 +1,46 @@
+From 68df4fee32acfefb29fa18d8e7b3bd992fd872fe Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 19:40:54 -0500
+Subject: [PATCH] porg: label shairport-sync by its real path
+
+porg has no separate system_ext partition -- /system_ext is a symlink to
+/system/system_ext -- and file contexts are matched against the real path
+when the image is built. The /system_ext form alone matched nothing, so
+the binary shipped as plain system_file.
+
+That is silent at build time and fatal at runtime: with the wrong exec
+label init cannot transition the service into the shairport domain, so it
+never starts, and /data/misc/airplay never gets created. Everything else
+was fine -- the property came out correctly labelled shairport_prop,
+because property contexts are not path-matched.
+
+Both forms are listed so this keeps working if system_ext is ever split
+into its own partition.
+
+Found on hardware; the emulator never showed it because the policy is
+porg-only and was verified by compilation alone.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ibcd389f2acd44c5b09ed8d6b30f09a2319370cbc
+---
+ sepolicy/private/file_contexts | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/sepolicy/private/file_contexts b/sepolicy/private/file_contexts
+index 664cb6d..1b8801c 100644
+--- a/sepolicy/private/file_contexts
++++ b/sepolicy/private/file_contexts
+@@ -1,2 +1,9 @@
+-/system_ext/bin/shairport-sync    u:object_r:shairport_exec:s0
++# porg has no separate system_ext partition: /system_ext is a symlink to
++# /system/system_ext, and file contexts are matched against the real path when
++# the image is built. The /system_ext form alone silently does not match, and
++# the binary comes out as plain system_file -- at which point init cannot
++# transition it into the shairport domain and the service never starts. Both
++# forms are listed so this keeps working if the partition is ever split out.
++/system/system_ext/bin/shairport-sync    u:object_r:shairport_exec:s0
++/system_ext/bin/shairport-sync           u:object_r:shairport_exec:s0
+ /data/misc/airplay(/.*)?          u:object_r:shairport_data_file:s0
+-- 
+2.43.0
+

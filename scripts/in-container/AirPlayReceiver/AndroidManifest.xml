@@ -8,7 +8,7 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -19,8 +19,20 @@
         <service
             android:name=".AirPlayService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
+            android:foregroundServiceType="specialUse"
             android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <!-- specialUse, not mediaPlayback. Android 15 refuses a
+                 mediaPlayback foreground service started from BOOT_COMPLETED
+                 (ForegroundServiceStartNotAllowedException), so the boot
+                 receiver crashed the service twice and ActivityManager backed
+                 off for thirty minutes, leaving the daemon running with nothing
+                 holding focus or publishing metadata. It is also the more
+                 honest type: this service spends nearly all its time waiting
+                 for a sender, and the audio is played by the native daemon,
+                 not by this app. -->
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="AirPlay receiver: listens for streams on the local network" />
             <intent-filter>
                 <action android:name="org.lineageos.tv.airplay.START" />
                 <action android:name="org.lineageos.tv.airplay.STOP" />
