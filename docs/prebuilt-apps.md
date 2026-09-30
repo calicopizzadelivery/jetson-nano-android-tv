@@ -85,8 +85,8 @@ Two things about Kodi to know:
 
 - **Kodi has its own AirPlay server** (`libshairplay.so`, Settings > Services
   > AirPlay). It is off by default. Turned on, it would advertise a second
-  AirPlay receiver next to ours, so leave it off. It is also audio-only and
-  older.
+  AirPlay receiver next to ours, so leave it off. It speaks the older AirPlay
+  1 (audio, and photo/video casting), not screen mirroring.
 - **Kodi writes a lot of small files once it has a library:** thumbnails,
   and the SQLite databases for its library and textures. Measure it with
   `scripts/emmc-*` after pointing it at a real library (RAIL).
@@ -116,9 +116,12 @@ corresponding source offered alongside:
 - **Kodi (GPL-2.0-or-later):** xbmc at `21.2-Omega`, commit `d1a1d48c`,
   **plus the third-party source tarballs** its Android build pulls in through
   `tools/depends` (ffmpeg, Python and the rest). The APK carries their
-  binaries, so their source is part of the obligation. Pointing at upstream is the
-common practice, but the robust way is our own mirror (a fork at that tag),
-so the source stays available as long as we distribute the binary. That is
-on the RAIL list. Apps' trademark rules also apply. Ship them unmodified, and for Kodi
+  binaries, so their source is part of the obligation.
+
+Pointing at upstream is the common practice, but the robust way is our own
+mirror (a fork at the tag, and the depends tarballs), so the source stays
+available for as long as we distribute the binaries. That is RAIL 18b.
+
+Apps' trademark rules also apply. Ship them unmodified, and for Kodi
 especially, with no third-party add-ons preinstalled: the Kodi Foundation's
 trademark policy is aimed at boxes sold "fully loaded".
