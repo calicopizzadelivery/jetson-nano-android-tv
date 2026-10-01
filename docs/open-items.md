@@ -18,9 +18,27 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 2. **BLE remote pairing.** `CONFIG_BT_LE` is in the kernel now
    (`kernel/0001`), but no remote has paired yet. This also decides whether
    the setup wizard's accessory step can be completed with a real remote.
+   **Test with a SHIELD remote first:** the image already carries SHIELD's
+   support for all three. There are key layouts for the 2015, 2017 and 2019
+   remotes (`0955:7212`, `7213`, `7217`), and NVIDIA's driver for them,
+   `hid-jarvis-remote.ko` (`hid-atv-jarvis.c`, which also turns the
+   microphone into an ALSA capture card), loads at boot. Pairing mode: hold
+   Select until the light flashes; a remote paired before needs Home + Back.
+   Things to check beyond the d-pad: the 2019 remote's Settings key (which
+   our framework config sends to Settings, not the launcher), its Netflix
+   key (`BUTTON_4`, which nothing here handles), volume (box volume, or the
+   TV's over CEC), and whether the microphone shows up. Its IR blaster and
+   remote finder are set up from NVIDIA's own app, which we do not have.
 3. **Bluetooth on an RTL8822CE.** Its Bluetooth half is on USB and needs
-   Realtek firmware. The image's Bluetooth HAL and firmware are set up for the
-   Broadcom parts. Find out whether that card gives Wi-Fi only.
+   Realtek firmware. Looked at 1 October: porg uses the generic `btlinux`
+   HAL, which drives whatever the kernel's `btusb` brings up, and the image
+   has `btusb` and `btrtl`. What it lacks is the firmware:
+   `rtl_bt/rtl8822cu_fw.bin` and `rtl8822cu_config.bin` from
+   linux-firmware. Realtek's own `rtk_btusb.ko` also ships and loads, and
+   would compete with `btusb` for the device, so it probably has to stay
+   unloaded. Likely a firmware drop plus a module-list change, but untested.
+   Until then, a box meant to be used with a Bluetooth remote needs the
+   Broadcom card.
 4. **Bluetooth audio and controllers on real hardware.** The Audio output tile
    is verified against a virtual A2DP speaker only
    (`docs/emulator-bluetooth.md`). Controllers matter for game streaming, below.

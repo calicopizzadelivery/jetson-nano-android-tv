@@ -436,7 +436,10 @@ branch for `10ec:c822`.
 
 Neither can be *proven* until a radio is fitted. **RTL8822CE is the card to
 buy** for quantity: the driver is already in-tree, the cards are ~$8-12 and
-ubiquitous, and it is M.2 2230 Key E. BCM4356 remains the only chip with wifi
+ubiquitous, and it is M.2 2230 Key E. **But for Bluetooth (remotes) it is
+not ready:** the image has no Realtek Bluetooth firmware. See RAIL 3. SHIELD
+remotes are already supported in the image (key layouts and NVIDIA's
+`hid-jarvis-remote` driver, RAIL 2). BCM4356 remains the only chip with wifi
 firmware in the image (`brcmfmac4356-pcie.bin`), but eBay has ~3 listings.
 
 Remaining:
