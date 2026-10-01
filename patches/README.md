@@ -160,6 +160,12 @@ code choice both ways, a change made from adb shown live, renaming the box
 forgetting one, forgetting the last, and forget all. Depends on our AirPlay
 receiver, so not for upstream.
 
+**Iterating without a flash:** the image ships two builds of these sources,
+`TvSettings` and `TvSettingsTwoPanel`, with the same package name, and the
+two-panel one is what runs. Build and push `TvSettingsTwoPanel`. Pushing a
+fresh `TvSettings` over the classic copy made Android pick that one at the
+next boot, which shows the old one-panel layout.
+
 ## TvSettings/0002 — a row for the screen saver's own settings
 
 Upstream reads a dream's `settingsActivity` into
