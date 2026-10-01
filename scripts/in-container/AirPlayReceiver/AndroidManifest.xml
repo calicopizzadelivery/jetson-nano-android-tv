@@ -71,6 +71,15 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
 
+        <!-- The PIN setting and the paired devices, for the launcher's
+             Streaming tile. Same permission as the service; call() checks
+             it again, because the platform does not apply it to call(). -->
+        <provider
+            android:name=".AirPlaySettingsProvider"
+            android:authorities="org.lineageos.tv.airplay.settings"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

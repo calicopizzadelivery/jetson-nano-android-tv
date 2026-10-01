@@ -111,15 +111,32 @@ set to require a passcode does: a new random code for each attempt, entered
 once per device. After that, the device is known by the Ed25519 key it proved
 the code with.
 
-| To | Do |
-| --- | --- |
-| Turn it off (anyone on the network may stream) | `setprop persist.jetsontv.airplay.pin off`, then restart the receiver (Streaming tile off and on) |
-| Turn it back on | `setprop persist.jetsontv.airplay.pin on`, then restart the receiver |
-| Make every device enter the code again | `am startservice -a org.lineageos.tv.airplay.FORGET_DEVICES -n org.lineageos.tv.airplay/.AirPlayService` |
+**On the TV:** the Streaming tile in the system options panel (Menu on the
+remote). Its dialog has the receiver's switch, **Ask new devices for a
+code**, and **Paired devices (N)**, which lists them by name and forgets one
+or all. Turning the code off asks first, since anyone on the network could
+then stream. A change restarts a running receiver, so it applies at once,
+ending any stream in progress (the restart takes about 0.25 s). With the
+receiver off, the setting is saved and used when it next starts.
 
-The log says which mode is in force when the receiver starts: `PIN required for
-new devices, N paired` or `no PIN`. Paired devices are in the app's
-`airplay_clients` shared preferences.
+The tile does not keep any of this itself. The AirPlay app owns the state and
+exposes it through `AirPlaySettingsProvider` (`call()` only, behind
+`WRITE_SECURE_SETTINGS`, the same permission as the service), so the tile,
+adb and anything added later all see the same thing:
+
+| To | adb |
+| --- | --- |
+| See the state | `content call --uri content://org.lineageos.tv.airplay.settings --method get` |
+| Turn the code off (anyone on the network may stream) | `... --method set_require_pin --extra value:b:false` |
+| Turn it back on | `... --method set_require_pin --extra value:b:true` |
+| Forget one device | `... --method forget --arg <its key, from get>` |
+| Forget every device | `... --method forget` |
+
+The setting itself is `persist.jetsontv.airplay.pin` (`on`/`off`). Setting it
+with `setprop` still works, but only takes effect when the receiver restarts.
+The log says which mode is in force whenever the receiver starts: `PIN
+required for new devices, N paired` or `no PIN`. Paired devices are in the
+app's `airplay_clients` shared preferences.
 
 **Enforced, not advisory.** UxPlay's own PIN mode only asked clients to pair.
 A client could skip pairing and go straight to streaming, and asking for
@@ -138,7 +155,14 @@ disconnects, or after the same two minutes. Back hides it.
 **Verified here:** the receiver starts in either mode, and the advertisement
 switches between `pw=true` and `pw=false`. The code screen appears over the
 launcher in under half a second (`pin` self-test mode) and dismisses when the
-device counts as paired. Forgetting devices works.
+device counts as paired. Forgetting devices works. The tile (1 October),
+driven with the remote's keys against two seeded devices: the code switch
+off with its confirmation, backing out of it, back on, the list, forgetting
+one, forgetting all, and the empty list. Each step was checked against the
+provider and the log. Not verified: that an app without
+`WRITE_SECURE_SETTINGS` is refused. The device has no way to run a command
+as another app's uid, so that rests on the manifest and the check in
+`call()`.
 
 **Not verified:** the pairing itself with a real client. The enforcement
 code is compiled and running, but no client has yet paired with it. This is

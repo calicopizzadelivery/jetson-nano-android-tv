@@ -85,7 +85,8 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     /**
      * "on" (the default): a device must enter the code shown on screen the
      * first time it connects. "off": anyone on the network may stream.
-     * Read when the receiver starts.
+     * Read when the receiver starts; changed through AirPlaySettingsProvider,
+     * which restarts a running receiver so the change applies at once.
      */
     private static final String PROP_PIN = "persist.jetsontv.airplay.pin";
     /** Every paired device has to enter the PIN again. */
@@ -187,6 +188,35 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         control.execute(this::startServer);
     }
 
+    /** Whether new devices must enter the code: see PROP_PIN. */
+    static boolean requirePin() {
+        return !"off".equals(SystemProperties.get(PROP_PIN, "on"));
+    }
+
+    /**
+     * Turns the code on or off. A running receiver restarts so that it
+     * applies now rather than at the next boot. That ends any stream in
+     * progress, which is fine for a setting changed on the TV itself.
+     */
+    static void setRequirePin(boolean on) {
+        if (on == requirePin()) {
+            return;
+        }
+        try {
+            SystemProperties.set(PROP_PIN, on ? "on" : "off");
+        } catch (RuntimeException e) {
+            // IllegalStateException is one of the few exceptions that reach
+            // the caller of a provider's call() intact.
+            throw new IllegalStateException("could not set " + PROP_PIN, e);
+        }
+        Log.i(TAG, on ? "new devices must now enter the PIN"
+                : "PIN off: any device on the network may stream");
+        AirPlayService service = running;
+        if (service != null) {
+            service.main.post(() -> service.endSession("the PIN setting changed"));
+        }
+    }
+
     /** The name senders show: see PROP_NAME. Read when the receiver starts. */
     static String receiverName(Context context) {
         String name = SystemProperties.get(PROP_NAME, "");
@@ -199,7 +229,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
 
     private void startServer() {
         String name = receiverName(this);
-        boolean requirePin = !"off".equals(SystemProperties.get(PROP_PIN, "on"));
+        boolean requirePin = requirePin();
         int port = uxplay.start(name, deviceId(),
                 new File(getFilesDir(), "uxplay.pem").getAbsolutePath(), requirePin);
         if (port > 0) {

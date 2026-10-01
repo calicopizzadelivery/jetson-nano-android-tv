@@ -336,6 +336,18 @@ side padding instead of the button default.
 **Status**: verified on porg by HDMI capture. Every title and status is on
 its own line, and focused tiles at either edge are unclipped.
 
+## Catapult/0011 — AirPlay's pairing controls in the Streaming tile
+
+Under the AirPlay switch: "Ask new devices for a code", and "Paired devices
+(N)", which lists them and forgets one or all. Turning the code off asks
+first. The state stays in the receiver's app: a streaming target names its
+settings provider, and the tile goes through it for every read and change.
+Also folds the four panel dialogs' placement code into one helper.
+
+**Status**: verified on porg with two seeded devices, every path. Depends on
+our AirPlay receiver, so not for upstream as it stands; the helper refactor
+could go on its own.
+
 ## Catapult/0010 — show the wallpaper on the home screen
 
 The home screen painted a flat colour, so no wallpaper was ever visible. It

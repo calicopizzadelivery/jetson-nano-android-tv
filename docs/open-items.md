@@ -69,8 +69,9 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 15. **UxPlay hardening pass.** Two findings remain: the mirroring codec
     packet's parameter-set lengths are unchecked, and `X-Apple-Session-ID` on
     RTSP reaches an `assert`. See `docs/airplay.md`, Security.
-16. **Pairing controls on the TV.** Turning the PIN on and off, and forgetting
-    devices, are adb-only today. The Streaming tile is the natural home.
+~~16. **Pairing controls on the TV.**~~ Done 1 October: the Streaming tile
+    turns the code on and off and lists and forgets paired devices. See
+    `docs/airplay.md`, "Pairing with a PIN".
 17. **Shairport leftovers** in the porg fork: the `shairport` SELinux domain,
     uid 7500, and the `interrupt` property label.
 18. **eMMC write reduction.** See `docs/emmc-writes.md`.

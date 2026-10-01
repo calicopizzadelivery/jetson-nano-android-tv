@@ -8,6 +8,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 /**
  * The devices that have paired with the PIN, so they need it only once.
  *
@@ -53,6 +57,44 @@ final class ClientRegistry {
 
     int size() {
         return prefs.getAll().size();
+    }
+
+    /** A paired device, as the settings list it. */
+    static final class Device {
+        final String key;
+        final String id;
+        /** Empty if the device never sent one. */
+        final String name;
+
+        Device(String key, String id, String name) {
+            this.key = key;
+            this.id = id;
+            this.name = name;
+        }
+    }
+
+    /** Every paired device, ordered by name. */
+    List<Device> devices() {
+        List<Device> devices = new ArrayList<>();
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            String value = String.valueOf(e.getValue());
+            int tab = value.indexOf('\t');
+            devices.add(new Device(e.getKey(),
+                    tab < 0 ? value : value.substring(0, tab),
+                    tab < 0 ? "" : value.substring(tab + 1)));
+        }
+        devices.sort((a, b) -> a.name.compareToIgnoreCase(b.name));
+        return devices;
+    }
+
+    /** It needs the PIN again next time. A stream it has open carries on. */
+    void forget(String publicKey) {
+        String old = prefs.getString(publicKey, null);
+        if (old == null) {
+            return;
+        }
+        prefs.edit().remove(publicKey).apply();
+        Log.i(TAG, "forgot " + old.replace('\t', ' ').trim() + "; it needs the PIN again");
     }
 
     void forgetAll() {
