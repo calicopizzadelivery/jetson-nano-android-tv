@@ -1,0 +1,24 @@
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+
+// What makes the image JetsonTV rather than a retargeted SHIELD: the default
+// wallpaper here, and the device name in overlay/ (both wired up in
+// jetson-tv.mk).
+
+license {
+    name: "JetsonTVWallpaper_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["legacy_unencumbered"],
+    license_text: ["wallpaper/NOTICE"],
+}
+
+// /product/media/wallpaper/earthset.jpg. ro.config.wallpaper makes it the
+// default, which is what the home screen shows until someone sets another.
+prebuilt_media {
+    name: "JetsonTVWallpaper",
+    src: "wallpaper/earthset.jpg",
+    filename_from_src: true,
+    sub_dir: "wallpaper",
+    product_specific: true,
+    licenses: ["JetsonTVWallpaper_license"],
+}

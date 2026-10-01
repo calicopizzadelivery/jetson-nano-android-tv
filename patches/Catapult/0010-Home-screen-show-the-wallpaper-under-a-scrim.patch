@@ -1,0 +1,78 @@
+From b48e7b8d80127e1d37823dc31895e218d4b591b0 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 19:34:20 -0500
+Subject: [PATCH] Home screen: show the wallpaper, under a scrim
+
+The home screen painted the theme's flat background colour, so whatever
+wallpaper the system had was never seen. MainActivity now has its own
+theme that shows the wallpaper, with a gradient scrim (20% black at the
+top, 50% at the bottom where the rows are) so the row titles and the
+clock stay legible on any image. The side panels keep their own theme:
+they are floating windows over the home screen and must not show the
+wallpaper themselves.
+
+Change-Id: I1497ddb595345629c411d3aca6ca9c20e168449f
+---
+ app/src/main/AndroidManifest.xml         |  3 ++-
+ app/src/main/res/drawable/home_scrim.xml | 14 ++++++++++++++
+ app/src/main/res/values/themes.xml       |  9 +++++++++
+ 3 files changed, 25 insertions(+), 1 deletion(-)
+ create mode 100644 app/src/main/res/drawable/home_scrim.xml
+
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index 3bb8fa7..6133a3a 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -66,7 +66,8 @@
+             android:name=".MainActivity"
+             android:excludeFromRecents="true"
+             android:exported="true"
+-            android:launchMode="singleTask">
++            android:launchMode="singleTask"
++            android:theme="@style/Theme.Catapult.Home">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+ 
+diff --git a/app/src/main/res/drawable/home_scrim.xml b/app/src/main/res/drawable/home_scrim.xml
+new file mode 100644
+index 0000000..7ae7094
+--- /dev/null
++++ b/app/src/main/res/drawable/home_scrim.xml
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<!-- Darkens the wallpaper behind the home screen, more towards the bottom
++     where the rows are, so titles and the clock stay legible on any image. -->
++<shape xmlns:android="http://schemas.android.com/apk/res/android"
++    android:shape="rectangle">
++    <gradient
++        android:angle="270"
++        android:endColor="#80000000"
++        android:startColor="#33000000" />
++</shape>
+diff --git a/app/src/main/res/values/themes.xml b/app/src/main/res/values/themes.xml
+index b1bbb38..46d1cbd 100644
+--- a/app/src/main/res/values/themes.xml
++++ b/app/src/main/res/values/themes.xml
+@@ -41,6 +41,15 @@
+ 
+     <style name="Theme.Catapult" parent="Theme.Material3.DayNight.NoActionBar.Leanback" />
+ 
++    <!-- The home screen shows the system wallpaper through a scrim, rather
++         than painting a flat colour. Only the home screen: the side panels
++         are floating windows over it and must not show the wallpaper. -->
++    <style name="Theme.Catapult.Home">
++        <item name="android:windowShowWallpaper">true</item>
++        <item name="android:windowBackground">@drawable/home_scrim</item>
++        <item name="android:colorBackgroundCacheHint">@null</item>
++    </style>
++
+     <style name="Theme.Catapult.SideActivity">
+         <item name="android:windowIsTranslucent">true</item>
+         <item name="android:windowContentOverlay">@null</item>
+-- 
+2.43.0
+

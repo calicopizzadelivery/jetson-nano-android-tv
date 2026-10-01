@@ -1,6 +1,7 @@
 # AirPlay receiver
 
-The box shows up on iPhones, iPads and Macs as **Jetson TV**: Screen Mirroring
+The box shows up on iPhones, iPads and Macs under its device name, **JetsonTV**
+unless renamed: Screen Mirroring
 from Control Center, and AirPlay audio from Music or anything else with an
 AirPlay button. The protocol is UxPlay's, hosted inside the `AirPlayReceiver`
 app. It replaced the Shairport Sync daemon on 30 September 2026. Shairport's
@@ -76,8 +77,11 @@ mDNS: lib/dnssd.c → dns_sd shim → UxPlay.nsdRegister → NsdManager
 
 ### Behaviour
 
-- **Name and identity.** Advertised as `persist.jetsontv.airplay.name`
-  (default "Jetson TV"), on `_airplay._tcp` and `_raop._tcp`. The device id is
+- **Name and identity.** Advertised under the device name (Settings >
+  Device Preferences > About > Device name, "JetsonTV" on a fresh install),
+  or `persist.jetsontv.airplay.name` if that is set, on `_airplay._tcp` and
+  `_raop._tcp`. Either is read when the receiver starts, so a rename shows
+  after the Streaming tile is turned off and on, or a reboot. The device id is
   a random locally administered MAC, kept in the app's preferences. The
   pairing key is in `files/uxplay.pem`. Both persist, so a phone that has seen
   the box before still recognises it.
@@ -272,19 +276,19 @@ adb logcat -s AirPlay UxPlay
    - With `persist.jetsontv.airplay.pin off` and the receiver restarted, no
      code is asked for at all.
 2. **Mirroring.** On the iPhone, open Control Center → Screen Mirroring →
-   Jetson TV. Expect `connection from "<phone>"`, then `video decoder
+   JetsonTV. Expect `connection from "<phone>"`, then `video decoder
    OMX.Nvidia.h264.decode`, then `mirrored picture is WxH`. Once the phone
    plays sound you should also see `AAC decoder … for AAC-ELD`. Then:
    - Rotate the phone and check the letterboxing follows.
    - Play a video with speech to check lip sync.
    - Stop from the phone, and separately with Back on the remote. Each should
      return to where you were, and the phone should show mirroring stopped.
-3. **Audio.** In Music, tap AirPlay → Jetson TV. The now-playing panel should
+3. **Audio.** In Music, tap AirPlay → JetsonTV. The now-playing panel should
    come up from the home screen with the track. Try the phone's volume slider,
    pause and skip. The log names the codec: ALAC arrives as PCM, and AAC-LC
    shows `AAC decoder … for AAC-LC`.
-4. **Mac.** Control Center → Screen Mirroring → Jetson TV (mirror or extend),
-   and Sound → output → Jetson TV.
+4. **Mac.** Control Center → Screen Mirroring → JetsonTV (mirror or extend),
+   and Sound → output → JetsonTV.
 5. **If something fails**, save `adb logcat -d` and look at the `UxPlay` lines
    around the failure. Pairing and FairPlay problems show there, before
    anything reaches the renderers.

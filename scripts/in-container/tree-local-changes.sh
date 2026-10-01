@@ -117,6 +117,22 @@ install_airplay_receiver() {
     return 0
 }
 
+# JetsonTV's name and default wallpaper: see Branding/Android.bp.
+install_branding() {
+    local src="/opt/jetson-tv/Branding"
+    local dst="${SRC}/vendor/jetson-tv/Branding"
+    [[ -d ${src} ]] || return 0
+    if [[ -d ${dst} ]] && diff -rq "${src}" "${dst}" >/dev/null 2>&1; then
+        note "Branding already current"
+        return 0
+    fi
+    rm -rf "${dst}"
+    mkdir -p "$(dirname "${dst}")"
+    cp -r "${src}" "${dst}"
+    note "Branding installed to vendor/jetson-tv"
+    return 0
+}
+
 # The product makefile that puts AmbientDream in the image. Lives beside the
 # app rather than in device/nvidia/porg so that porg's own tree carries only an
 # inherit-product-if-exists and still builds without us.
@@ -146,6 +162,7 @@ install_decodetest
 install_raopsend
 install_ambient_dream
 install_airplay_receiver
+install_branding
 install_prebuilt_apps
 install_vendor_mk
 note "done"

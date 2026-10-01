@@ -32,6 +32,7 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.provider.Settings;
 import android.service.dreams.DreamService;
 import android.service.dreams.IDreamManager;
 import android.text.TextUtils;
@@ -75,6 +76,11 @@ public class AirPlayService extends Service implements UxPlay.Listener {
 
     /** Read by the Streaming tile. */
     static final String PROP_ENABLED = "persist.jetsontv.airplay.enabled";
+    /**
+     * Overrides the advertised name. Unset (the default), the receiver uses
+     * the device name from Settings, so renaming the box renames it on
+     * iPhones and Macs too.
+     */
     private static final String PROP_NAME = "persist.jetsontv.airplay.name";
     /**
      * "on" (the default): a device must enter the code shown on screen the
@@ -181,8 +187,18 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         control.execute(this::startServer);
     }
 
+    /** The name senders show: see PROP_NAME. Read when the receiver starts. */
+    static String receiverName(Context context) {
+        String name = SystemProperties.get(PROP_NAME, "");
+        if (TextUtils.isEmpty(name)) {
+            name = Settings.Global.getString(context.getContentResolver(),
+                    Settings.Global.DEVICE_NAME);
+        }
+        return TextUtils.isEmpty(name) ? "JetsonTV" : name;
+    }
+
     private void startServer() {
-        String name = SystemProperties.get(PROP_NAME, "Jetson TV");
+        String name = receiverName(this);
         boolean requirePin = !"off".equals(SystemProperties.get(PROP_PIN, "on"));
         int port = uxplay.start(name, deviceId(),
                 new File(getFilesDir(), "uxplay.pem").getAbsolutePath(), requirePin);

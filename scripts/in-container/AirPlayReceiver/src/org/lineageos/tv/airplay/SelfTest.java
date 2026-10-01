@@ -111,7 +111,7 @@ final class SelfTest implements Runnable {
                     + (encoder != null ? ", video through " + encoder.getName() : "")
                     + (eld != null ? ", " + eld.size() + " AAC-ELD units" : ""));
             if (!mirroring) {
-                listener.onMetadata(dmap("Self-test tone", "Jetson TV bench", "AirPlay",
+                listener.onMetadata(dmap("Self-test tone", "JetsonTV bench", "AirPlay",
                         seconds * 1000L));
                 listener.onCoverArt(coverArt());
             }

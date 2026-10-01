@@ -1,4 +1,4 @@
-# Project: Jetson Nano → Android TV box
+# Project: JetsonTV (Jetson Nano → Android TV box)
 
 Context for any Claude session working in this repo. Written by a Cowork session
 on 2026-09-10 that had file access to this folder but no shell on the host.
@@ -7,6 +7,11 @@ on 2026-09-10 that had file access to this folder but no shell on the host.
 
 Turn NVIDIA Jetson Nano 4GB boards into usable TV boxes running **LineageOS
 Android TV**, and build a reproducible, automated build environment for doing so.
+
+The system is called **JetsonTV** (named 2026-09-30). "MythTV" was only ever
+a codename for it; the carrier-board repo `mythtv-porg` is a separate project
+and keeps its name unless the user says otherwise. The name, the default
+wallpaper and how both are set are in `docs/branding.md`.
 
 Long-term: possibly extend to Jetson Orin (AGX / NX / Nano). Deferred for now.
 
@@ -461,6 +466,12 @@ byte for byte so its own signature survives, and its JNI libraries are
 extracted beside it: a bundled app never has them extracted at install, so a
 compressed library otherwise fails to load at runtime. The reasoning, and how
 to add anything else, is in `docs/prebuilt-apps.md`.
+
+**Publishing an image creates source obligations** for the kernel, about two
+dozen AOSP userspace projects, our AirPlay stack and the four apps. Nothing is
+owed until an image is distributed; the plan (pinned manifest, source bundle
+beside the image, a pointer in the device's notices) and how to re-run AOSP's
+`compliance_listshare` scan are in `docs/source-release.md`.
 
 **`docs/open-items.md` is the running list** of what is left to test or
 build, grouped by what it waits on: the radio, Apple hardware, other

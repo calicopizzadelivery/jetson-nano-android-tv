@@ -1,8 +1,18 @@
 // SPDX-FileCopyrightText: 2026 The LineageOS Project
 // SPDX-License-Identifier: Apache-2.0
 
+// The app is GPLv3 because it links UxPlay; this puts that licence in the
+// image's notices, next to UxPlay's own.
+license {
+    name: "AirPlayReceiver_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["SPDX-license-identifier-GPL-3.0-or-later"],
+    license_text: ["COPYING"],
+}
+
 android_app {
     name: "AirPlayReceiver",
+    licenses: ["AirPlayReceiver_license"],
     srcs: ["src/**/*.java"],
     resource_dirs: ["res"],
     manifest: "AndroidManifest.xml",

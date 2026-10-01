@@ -1,8 +1,9 @@
-# Jetson TV — containerised LineageOS build environment
+# JetsonTV — containerised LineageOS build environment
 
-Builds LineageOS **Android TV** for the NVIDIA Jetson Nano (LineageOS codename
-`porg`) inside a pinned Ubuntu 22.04 container, so the host distro is irrelevant
-and the toolchain can't drift.
+JetsonTV is a TV box built on the NVIDIA Jetson Nano. This repo builds its
+image, LineageOS **Android TV** for the Nano (LineageOS codename `porg`),
+inside a pinned Ubuntu 22.04 container, so the host distro is irrelevant and
+the toolchain can't drift.
 
 Target by default: `lineage-22.2` (Android 15), which is what the official
 `porg` nightlies are currently built from.

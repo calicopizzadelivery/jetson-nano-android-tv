@@ -12,7 +12,6 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemProperties;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -80,7 +79,7 @@ public class PinActivity extends Activity {
         lp.bottomMargin = dp(8);
         card.addView(pinView, lp);
 
-        String name = SystemProperties.get("persist.jetsontv.airplay.name", "Jetson TV");
+        String name = AirPlayService.receiverName(this);
         // A fixed width: with only a maximum, the card measured the text at
         // one width and laid it out at another, and the last line was cut.
         TextView body = text(getString(R.string.pin_body, name), 22, 0xFFDDE2EA);

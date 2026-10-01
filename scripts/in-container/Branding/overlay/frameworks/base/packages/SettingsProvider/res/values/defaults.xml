@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     SPDX-FileCopyrightText: 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- The device name a fresh install starts with: Settings shows it, the
+         file picker titles internal storage with it, and AirPlay advertises
+         it. SHIELD's tree (device/nvidia/foster) sets "SHIELD Android TV";
+         product overlays outrank that device overlay. -->
+    <string name="def_device_name_simple" translatable="false">JetsonTV</string>
+</resources>

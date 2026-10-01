@@ -32,7 +32,7 @@ reaches `mWakefulness=Dreaming` and stays on the same `DreamRecord`
 indefinitely. With a positive value it goes to `Asleep` when that expires.
 
 **Only one dream is installed**: `com.android.dreams.basic.Colors`, a colour
-gradient. Fine as a proof of life, not what a MythTV box should ship.
+gradient. Fine as a proof of life, not what a JetsonTV box should ship.
 
 The framework default, `com.android.deskclock/…Screensaver`, is the DeskClock
 app's dream — a large digital clock. DeskClock is AOSP's stock Clock app
@@ -41,7 +41,7 @@ which is the whole reason `screensaver_components` comes up empty. Its source
 is in the tree at `packages/apps/DeskClock`, and `packages/screensavers/`
 holds two more: `Basic` (Colors) and `PhotoTable` (a photo slideshow, with
 `PhotoTableDream` and `FlipperDream`). Any of the three could be built into
-the product; none is a good MythTV screen as-is.
+the product; none is a good JetsonTV screen as-is.
 
 ## Starting a dream on demand
 

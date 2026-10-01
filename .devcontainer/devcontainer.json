@@ -1,5 +1,5 @@
 {
-  "name": "Jetson TV — LineageOS build",
+  "name": "JetsonTV — LineageOS build",
 
   "dockerComposeFile": ["../docker-compose.yml"],
   "service": "lineage",

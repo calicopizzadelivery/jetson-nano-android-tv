@@ -82,19 +82,19 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     Barriers do not help asynchronous saves such as `SharedPreferences.apply()`,
     which the AirPlay paired-devices list uses. See `docs/emmc-writes.md`,
     "Power loss".
-18b. **Source mirrors for third-party apps, before any image is published.**
-    Moonlight (GPL-3.0), Kodi (GPL-2.0-or-later), Lemuroid (GPL-3.0) and
-    Jellyfin for Android TV (GPL-2.0) ship in the image. Mirror each at its
-    pinned tag: moonlight-android with its submodules, xbmc with its
-    `tools/depends` tarballs. See `docs/prebuilt-apps.md`.
+18b. **Source release, before any image is published.** Every image carries
+    copyleft code: the kernel, about two dozen AOSP userspace projects, our
+    AirPlay stack and the four third-party apps. Each release needs its
+    pinned manifest, a source bundle published beside the image, and a
+    pointer to it in the device's notices. The manifest, the bundle script
+    and the notice can be built now; the publishing waits for the first
+    release. See `docs/source-release.md`.
 18c. **Kodi's eMMC writes, once it has a real library:** thumbnails and its
     SQLite databases. Use `scripts/emmc-*`. Also HEVC playback in Kodi, which
     needs a clip made somewhere with an HEVC encoder.
-18d. **The box calls itself "SHIELD Android TV".** That is the default device
-    name (foster's SettingsProvider overlay, `def_device_name_simple`) and
-    Bluetooth name (`bluetooth.device.default_name`), so it is what other
-    devices and the file picker show, while AirPlay says "Jetson TV". A porg
-    overlay and prop should set our own.
+~~18d. **The box calls itself "SHIELD Android TV".**~~ Done 30 September: it
+    is JetsonTV, for the device name, Bluetooth and AirPlay. See
+    `docs/branding.md`.
 19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
     statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
     and Catapult/0001's Menu key is verified while its Settings key is not.

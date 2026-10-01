@@ -336,6 +336,18 @@ side padding instead of the button default.
 **Status**: verified on porg by HDMI capture. Every title and status is on
 its own line, and focused tiles at either edge are unclipped.
 
+## Catapult/0010 — show the wallpaper on the home screen
+
+The home screen painted a flat colour, so no wallpaper was ever visible. It
+now shows the system wallpaper under a gradient scrim (20% black at the top,
+50% at the bottom, where the rows are). Only MainActivity: the side panels
+float over it and keep their own theme. JetsonTV's default wallpaper comes
+from `ro.config.wallpaper`; see `docs/branding.md`.
+
+**Status**: verified on porg: the wallpaper shows, measured at the expected
+darkening, and the system options panel is unchanged. Upstreamable; a stock
+build would show LineageOS's default wallpaper.
+
 ## Catapult/0009 — one tile per app
 
 Installed apps come from both LEANBACK_LAUNCHER and LAUNCHER, folded by the
