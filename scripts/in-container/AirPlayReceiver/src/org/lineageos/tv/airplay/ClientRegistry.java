@@ -28,9 +28,11 @@ final class ClientRegistry {
     private static final String TAG = "AirPlay";
     private static final String PREFS = "airplay_clients";
 
+    private final Context context;
     private final SharedPreferences prefs;
 
     ClientRegistry(Context context) {
+        this.context = context.getApplicationContext();
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
@@ -50,6 +52,7 @@ final class ClientRegistry {
             return;
         }
         prefs.edit().putString(publicKey, value).apply();
+        AirPlaySettingsProvider.notifyChanged(context);
         Log.i(TAG, (old == null ? "remembering " : "updating ") + deviceId
                 + (name == null ? "" : " (\"" + name + "\")") + "; "
                 + prefs.getAll().size() + " device(s) paired");
@@ -94,12 +97,14 @@ final class ClientRegistry {
             return;
         }
         prefs.edit().remove(publicKey).apply();
+        AirPlaySettingsProvider.notifyChanged(context);
         Log.i(TAG, "forgot " + old.replace('\t', ' ').trim() + "; it needs the PIN again");
     }
 
     void forgetAll() {
         int n = size();
         prefs.edit().clear().apply();
+        AirPlaySettingsProvider.notifyChanged(context);
         Log.i(TAG, "forgot " + n + " paired device(s): each needs the PIN again");
     }
 }

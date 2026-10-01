@@ -340,9 +340,9 @@ so do not reopen it.
 - **New devices need a PIN shown on the TV** (`persist.jetsontv.airplay.pin`,
   default on), once per device. Our fork enforces it; upstream only asked for
   it. The code screen is verified, but pairing with a real client is not.
-  The Streaming tile turns it off and on and forgets devices, through the
-  app's `AirPlaySettingsProvider`. All in `docs/airplay.md`, "Pairing with a
-  PIN".
+  Settings > System > AirPlay and the Streaming tile both turn it off and on
+  and forget devices, through the app's `AirPlaySettingsProvider`. All in
+  `docs/airplay.md`, "Pairing with a PIN".
 - The Shairport uid lesson below still stands for native audio clients, but
   the receiver is now an ordinary app uid playing through AudioTrack.
 

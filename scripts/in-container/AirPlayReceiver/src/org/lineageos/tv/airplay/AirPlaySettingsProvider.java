@@ -7,6 +7,7 @@ package org.lineageos.tv.airplay;
 import android.Manifest;
 import android.content.ContentProvider;
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -15,10 +16,10 @@ import android.os.SystemProperties;
 import java.util.List;
 
 /**
- * The receiver's pairing settings, for the launcher's Streaming tile: whether
- * new devices must enter the code, and which devices have paired. The state
- * stays in this app, which acts on it, so the tile and anything else that
- * shows it cannot disagree.
+ * The receiver's pairing settings, for the launcher's Streaming tile and
+ * Settings > System > AirPlay (both in our forks): whether new devices must
+ * enter the code, and which devices have paired. The state stays in this
+ * app, which acts on it, so the two screens cannot disagree.
  *
  * Only call() is implemented:
  *
@@ -27,8 +28,13 @@ import java.util.List;
  *   forget           arg: a device's key   or no arg, for every device
  *
  * Each returns the state afterwards: "enabled" and "require_pin" (booleans),
- * and the paired devices as parallel "paired_keys" and "paired_names" string
- * arrays, ordered by name. A name is empty if the device never sent one.
+ * "name" (what senders show), and the paired devices as parallel
+ * "paired_keys" and "paired_names" string arrays, ordered by name. A name is
+ * empty if the device never sent one.
+ *
+ * Any change, from here, from the service or from a device pairing, is
+ * announced with notifyChange() on content://AUTHORITY, so a screen showing
+ * the state can observe that and stay current.
  *
  * Callers need WRITE_SECURE_SETTINGS, as for starting and stopping the
  * service. The manifest has the system check it when the provider is
@@ -40,6 +46,11 @@ import java.util.List;
 public final class AirPlaySettingsProvider extends ContentProvider {
 
     static final String AUTHORITY = "org.lineageos.tv.airplay.settings";
+    private static final Uri URI = Uri.parse("content://" + AUTHORITY);
+
+    static void notifyChanged(Context context) {
+        context.getContentResolver().notifyChange(URI, null);
+    }
 
     @Override
     public boolean onCreate() {
@@ -58,7 +69,7 @@ public final class AirPlaySettingsProvider extends ContentProvider {
                 if (extras == null || !extras.containsKey("value")) {
                     throw new IllegalArgumentException("set_require_pin needs a boolean \"value\"");
                 }
-                AirPlayService.setRequirePin(extras.getBoolean("value"));
+                AirPlayService.setRequirePin(getContext(), extras.getBoolean("value"));
                 break;
             case "forget":
                 if (arg == null) {
@@ -70,10 +81,10 @@ public final class AirPlaySettingsProvider extends ContentProvider {
             default:
                 throw new IllegalArgumentException("unknown method " + method);
         }
-        return state(registry);
+        return state(getContext(), registry);
     }
 
-    private static Bundle state(ClientRegistry registry) {
+    private static Bundle state(Context context, ClientRegistry registry) {
         List<ClientRegistry.Device> devices = registry.devices();
         String[] keys = new String[devices.size()];
         String[] names = new String[devices.size()];
@@ -84,6 +95,7 @@ public final class AirPlaySettingsProvider extends ContentProvider {
         Bundle state = new Bundle();
         state.putBoolean("enabled", SystemProperties.getBoolean(AirPlayService.PROP_ENABLED, false));
         state.putBoolean("require_pin", AirPlayService.requirePin());
+        state.putString("name", AirPlayService.receiverName(context));
         state.putStringArray("paired_keys", keys);
         state.putStringArray("paired_names", names);
         return state;

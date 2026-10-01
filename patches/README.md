@@ -136,6 +136,30 @@ This one is **not upstreamable at all**, and unlike `porg/0001` there is no
 argument to be had about it: AmbientDream lives in `vendor/jetson-tv`, which
 is ours.
 
+## TvSettings/0003 — Settings > System > AirPlay
+
+A page for the AirPlay receiver, under System, next to Screen saver: its
+switch, the name senders show (opening the device rename), a *New devices*
+page choosing whether a code is asked for, and the paired devices, each with
+a forget confirmation, plus *Forget all* when there are several. All of it
+goes through the receiver's `AirPlaySettingsProvider`, the same as the
+launcher's Streaming tile, and the page observes the provider's URI so it
+follows changes made elsewhere. The row is hidden when the receiver is not
+installed. Added to `device_two_panel.xml`, which is what this build shows,
+and to the classic `device.xml`.
+
+One two-panel detail: going back from a sub-page leaves that page in the
+preview panel, so after forgetting a device the preview went on asking to
+forget it while the focus was on another. The page asks the two-panel
+fragment to refresh the preview (`refocusPreferenceForceRefresh`) whenever
+the device list changes.
+
+**Status**: verified on porg with seeded devices: the switch both ways, the
+code choice both ways, a change made from adb shown live, renaming the box
+(the receiver re-advertised within 0.1 s and the page updated), cancel,
+forgetting one, forgetting the last, and forget all. Depends on our AirPlay
+receiver, so not for upstream.
+
 ## TvSettings/0002 — a row for the screen saver's own settings
 
 Upstream reads a dream's `settingsActivity` into

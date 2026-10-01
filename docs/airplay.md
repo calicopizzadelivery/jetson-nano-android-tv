@@ -78,10 +78,10 @@ mDNS: lib/dnssd.c → dns_sd shim → UxPlay.nsdRegister → NsdManager
 ### Behaviour
 
 - **Name and identity.** Advertised under the device name (Settings >
-  Device Preferences > About > Device name, "JetsonTV" on a fresh install),
-  or `persist.jetsontv.airplay.name` if that is set, on `_airplay._tcp` and
-  `_raop._tcp`. Either is read when the receiver starts, so a rename shows
-  after the Streaming tile is turned off and on, or a reboot. The device id is
+  System > About > Device name, "JetsonTV" on a fresh install), or
+  `persist.jetsontv.airplay.name` if that is set, on `_airplay._tcp` and
+  `_raop._tcp`. Renaming the box restarts the receiver under the new name
+  within about 0.1 s; the service watches the device name. The device id is
   a random locally administered MAC, kept in the app's preferences. The
   pairing key is in `files/uxplay.pem`. Both persist, so a phone that has seen
   the box before still recognises it.
@@ -111,18 +111,29 @@ set to require a passcode does: a new random code for each attempt, entered
 once per device. After that, the device is known by the Ed25519 key it proved
 the code with.
 
-**On the TV:** the Streaming tile in the system options panel (Menu on the
-remote). Its dialog has the receiver's switch, **Ask new devices for a
-code**, and **Paired devices (N)**, which lists them by name and forgets one
-or all. Turning the code off asks first, since anyone on the network could
-then stream. A change restarts a running receiver, so it applies at once,
-ending any stream in progress (the restart takes about 0.25 s). With the
-receiver off, the setting is saved and used when it next starts.
+**On the TV**, in two places that always agree:
 
-The tile does not keep any of this itself. The AirPlay app owns the state and
+- **Settings > System > AirPlay** (TvSettings/0003): the receiver's switch;
+  the name iPhones and Macs show, which opens the device rename; **New
+  devices**, a page choosing between *Ask for a code* and *Don't ask*, with
+  the consequence spelled out under each; and the paired devices, each
+  opening a page to forget it, with *Forget all* when there are several.
+  The page follows changes made anywhere else while it is open.
+- **The Streaming tile** in the system options panel (Menu on the remote):
+  the receiver's switch, **Ask new devices for a code**, and **Paired
+  devices (N)**, which lists them by name and forgets one or all. Turning
+  the code off there asks first, since one unticked box is easy to hit.
+
+A change of the code setting restarts a running receiver, so it applies at
+once, ending any stream in progress (the restart takes about 0.25 s). With
+the receiver off, the setting is saved and used when it next starts.
+
+Neither screen keeps any of this itself. The AirPlay app owns the state and
 exposes it through `AirPlaySettingsProvider` (`call()` only, behind
-`WRITE_SECURE_SETTINGS`, the same permission as the service), so the tile,
-adb and anything added later all see the same thing:
+`WRITE_SECURE_SETTINGS`, the same permission as the service). Every change,
+including one from a device pairing, is announced with `notifyChange()` on
+`content://org.lineageos.tv.airplay.settings`, which is how the Settings page
+stays current. adb sees the same thing:
 
 | To | adb |
 | --- | --- |
@@ -159,7 +170,9 @@ device counts as paired. Forgetting devices works. The tile (1 October),
 driven with the remote's keys against two seeded devices: the code switch
 off with its confirmation, backing out of it, back on, the list, forgetting
 one, forgetting all, and the empty list. Each step was checked against the
-provider and the log. Not verified: that an app without
+provider and the log. The Settings page likewise, every path, including a
+rename and a change made from adb while it was open (patches/README.md,
+TvSettings/0003). Not verified: that an app without
 `WRITE_SECURE_SETTINGS` is refused. The device has no way to run a command
 as another app's uid, so that rests on the manifest and the check in
 `call()`.

@@ -1,0 +1,666 @@
+From 47e3833d34ecfb1d2aa850ea7bb3d4f499693d76 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 21:32:36 -0500
+Subject: [PATCH] System: an AirPlay page
+
+Settings > System > AirPlay, next to Screen saver, for the AirPlay receiver
+this build ships (org.lineageos.tv.airplay): its switch; the name iPhones
+and Macs show, which opens the device rename; a "New devices" page choosing
+between asking for a code and not, with what each means spelled out; and
+the paired devices, each opening a page to forget it, plus "Forget all"
+when there are several.
+
+The receiver's app keeps all of this. The page reads and changes it only
+through that app's settings provider and its service, as the launcher's
+Streaming tile does, so the two never disagree, and it observes the
+provider's URI to follow changes made elsewhere while it is open: from the
+tile, from adb, or from a device pairing. The row is hidden on a build
+without the receiver.
+
+In the two-panel layout, going back from a sub-page leaves that page in
+the preview panel, so after a device was forgotten the preview went on
+offering to forget it while the focus was on the next one. Rebuilding the
+device list now asks the two-panel fragment to refresh the preview.
+
+Change-Id: I353a04f008b7c7dfef4b34f127f0302301480d1b
+---
+ Settings/res/values/strings.xml               |  26 +++
+ Settings/res/xml/airplay.xml                  |  28 +++
+ Settings/res/xml/airplay_code.xml             |  18 ++
+ Settings/res/xml/device.xml                   |   7 +
+ Settings/res/xml/device_two_panel.xml         |   7 +
+ .../tv/settings/device/DevicePrefFragment.kt  |   3 +
+ .../device/airplay/AirPlayClient.java         | 105 ++++++++++++
+ .../device/airplay/AirPlayCodeFragment.java   |  84 +++++++++
+ .../device/airplay/AirPlayForgetFragment.java |  87 ++++++++++
+ .../device/airplay/AirPlayFragment.java       | 162 ++++++++++++++++++
+ 10 files changed, 527 insertions(+)
+ create mode 100644 Settings/res/xml/airplay.xml
+ create mode 100644 Settings/res/xml/airplay_code.xml
+ create mode 100644 Settings/src/com/android/tv/settings/device/airplay/AirPlayClient.java
+ create mode 100644 Settings/src/com/android/tv/settings/device/airplay/AirPlayCodeFragment.java
+ create mode 100644 Settings/src/com/android/tv/settings/device/airplay/AirPlayForgetFragment.java
+ create mode 100644 Settings/src/com/android/tv/settings/device/airplay/AirPlayFragment.java
+
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index 9b445a6f1..94094cf29 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -3022,4 +3022,30 @@
+     <!-- Subtitle for volume change during select -->
+     <string name="volume_change_subtitle_select">Only affects volume on %1$s device , not on TV</string>
+ 
++    <!-- System > AirPlay: the AirPlay receiver (org.lineageos.tv.airplay) -->
++    <string name="airplay_title" translatable="false">AirPlay</string>
++    <!-- Summary of the switch that turns the AirPlay receiver on and off -->
++    <string name="airplay_enabled_summary">Let iPhones, iPads and Macs show their screen and play audio on this TV</string>
++    <!-- The name iPhones and Macs show for this TV; the summary is the name -->
++    <string name="airplay_name_title">Name</string>
++    <!-- Whether a device connecting for the first time must enter a code -->
++    <string name="airplay_code_title">New devices</string>
++    <string name="airplay_code_summary_on">Must enter a code shown on this TV</string>
++    <string name="airplay_code_summary_off">Can stream without a code</string>
++    <string name="airplay_code_on">Ask for a code</string>
++    <string name="airplay_code_on_summary">Recommended. A new device enters the code shown on this TV, once.</string>
++    <string name="airplay_code_off">Don\u2019t ask</string>
++    <string name="airplay_code_off_summary">Any device on your network can mirror its screen and play audio here</string>
++    <!-- The devices that have entered the code -->
++    <string name="airplay_paired_title">Paired devices</string>
++    <string name="airplay_paired_none">No devices are paired</string>
++    <string name="airplay_paired_none_summary">A device pairs by entering the code this TV shows the first time it connects</string>
++    <string name="airplay_unnamed_device">Unnamed device</string>
++    <string name="airplay_forget_all">Forget all paired devices</string>
++    <string name="airplay_forget_title">Forget %1$s?</string>
++    <string name="airplay_forget_all_title">Forget all paired devices?</string>
++    <string name="airplay_forget_message">It will have to enter a code again the next time it connects.</string>
++    <string name="airplay_forget_all_message">Each will have to enter a code again the next time it connects.</string>
++    <string name="airplay_forget">Forget</string>
++
+ </resources>
+diff --git a/Settings/res/xml/airplay.xml b/Settings/res/xml/airplay.xml
+new file mode 100644
+index 000000000..5c72e0569
+--- /dev/null
++++ b/Settings/res/xml/airplay.xml
+@@ -0,0 +1,28 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<!-- Settings > System > AirPlay. The paired devices are filled in by
++     AirPlayFragment. -->
++<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
++    android:title="@string/airplay_title">
++    <SwitchPreference
++        android:key="airplay_enabled"
++        android:persistent="false"
++        android:summary="@string/airplay_enabled_summary"
++        android:title="@string/airplay_title" />
++    <!-- AirPlay advertises the device name, so this is where to change it. -->
++    <Preference
++        android:key="airplay_name"
++        android:title="@string/airplay_name_title">
++        <intent android:action="android.settings.DEVICE_NAME" />
++    </Preference>
++    <Preference
++        android:fragment="com.android.tv.settings.device.airplay.AirPlayCodeFragment"
++        android:key="airplay_code"
++        android:title="@string/airplay_code_title" />
++    <PreferenceCategory
++        android:key="airplay_paired"
++        android:title="@string/airplay_paired_title" />
++</PreferenceScreen>
+diff --git a/Settings/res/xml/airplay_code.xml b/Settings/res/xml/airplay_code.xml
+new file mode 100644
+index 000000000..febaf61aa
+--- /dev/null
++++ b/Settings/res/xml/airplay_code.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!--
++     SPDX-FileCopyrightText: 2026 The LineageOS Project
++     SPDX-License-Identifier: Apache-2.0
++-->
++<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
++    android:title="@string/airplay_code_title">
++    <com.android.tv.settings.RadioPreference
++        android:key="code_on"
++        android:persistent="false"
++        android:summary="@string/airplay_code_on_summary"
++        android:title="@string/airplay_code_on" />
++    <com.android.tv.settings.RadioPreference
++        android:key="code_off"
++        android:persistent="false"
++        android:summary="@string/airplay_code_off_summary"
++        android:title="@string/airplay_code_off" />
++</PreferenceScreen>
+diff --git a/Settings/res/xml/device.xml b/Settings/res/xml/device.xml
+index 826c4b9b4..460d23ea5 100644
+--- a/Settings/res/xml/device.xml
++++ b/Settings/res/xml/device.xml
+@@ -94,6 +94,13 @@
+         android:icon="@drawable/ic_settings_system_daydream"
+         android:key="daydream"
+         android:title="@string/device_daydream"/>
++    <!-- The AirPlay receiver's settings. DevicePrefFragment hides the row on
++         a build without the receiver. -->
++    <Preference
++        android:fragment="com.android.tv.settings.device.airplay.AirPlayFragment"
++        android:icon="@drawable/ic_cast"
++        android:key="airplay"
++        android:title="@string/airplay_title"/>
+     <Preference
+         android:fragment="com.android.tv.settings.device.display.daydream.EnergySaverFragment"
+         android:icon="@drawable/ic_settings_energy_saver"
+diff --git a/Settings/res/xml/device_two_panel.xml b/Settings/res/xml/device_two_panel.xml
+index 4aac57c67..714601cda 100644
+--- a/Settings/res/xml/device_two_panel.xml
++++ b/Settings/res/xml/device_two_panel.xml
+@@ -39,6 +39,13 @@
+         android:icon="@drawable/ic_settings_system_daydream"
+         android:key="daydream"
+         android:title="@string/device_daydream"/>
++    <!-- The AirPlay receiver's settings. DevicePrefFragment hides the row on
++         a build without the receiver. -->
++    <Preference
++        android:fragment="com.android.tv.settings.device.airplay.AirPlayFragment"
++        android:icon="@drawable/ic_cast"
++        android:key="airplay"
++        android:title="@string/airplay_title"/>
+     <Preference
+         android:fragment="com.android.tv.settings.device.eco.PowerAndEnergyFragment"
+         android:icon="@drawable/ic_settings_power_and_energy"
+diff --git a/Settings/src/com/android/tv/settings/device/DevicePrefFragment.kt b/Settings/src/com/android/tv/settings/device/DevicePrefFragment.kt
+index 3fa77eb54..cc2be64ba 100644
+--- a/Settings/src/com/android/tv/settings/device/DevicePrefFragment.kt
++++ b/Settings/src/com/android/tv/settings/device/DevicePrefFragment.kt
+@@ -52,6 +52,7 @@ import com.android.tv.settings.autofill.AutofillHelper
+ import com.android.tv.settings.customization.CustomizationConstants
+ import com.android.tv.settings.customization.Partner
+ import com.android.tv.settings.customization.PartnerPreferencesMerger
++import com.android.tv.settings.device.airplay.AirPlayClient
+ import com.android.tv.settings.device.eco.PowerAndEnergyFragment
+ import com.android.tv.settings.inputmethod.InputMethodHelper
+ import com.android.tv.settings.overlay.FlavorUtils
+@@ -135,6 +136,7 @@ class DevicePrefFragment : SettingsPreferenceFragment(), LongClickPreference.OnL
+         hideIfIntentUnhandled(findPreference(KEY_HOME_SETTINGS))
+         hideIfIntentUnhandled(findPreference(KEY_CAST_SETTINGS))
+         hideIfIntentUnhandled(findPreference(KEY_USAGE))
++        findPreference<Preference>(KEY_AIRPLAY)?.isVisible = AirPlayClient.isInstalled(requireContext())
+         viewLifecycleOwner.lifecycleScope.launch {
+             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                 updateInternalSettings()
+@@ -408,6 +410,7 @@ class DevicePrefFragment : SettingsPreferenceFragment(), LongClickPreference.OnL
+         @JvmField
+         @VisibleForTesting
+         val KEY_DEVELOPER = "developer"
++        private const val KEY_AIRPLAY = "airplay"
+ 
+         @JvmField
+         @VisibleForTesting
+diff --git a/Settings/src/com/android/tv/settings/device/airplay/AirPlayClient.java b/Settings/src/com/android/tv/settings/device/airplay/AirPlayClient.java
+new file mode 100644
+index 000000000..a026efbd1
+--- /dev/null
++++ b/Settings/src/com/android/tv/settings/device/airplay/AirPlayClient.java
+@@ -0,0 +1,105 @@
++/*
++ * SPDX-FileCopyrightText: 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.tv.settings.device.airplay;
++
++import android.content.ComponentName;
++import android.content.Context;
++import android.content.Intent;
++import android.net.Uri;
++import android.os.Bundle;
++import android.util.Log;
++
++import androidx.annotation.Nullable;
++
++/**
++ * The AirPlay receiver's settings, which its own app keeps: whether it runs,
++ * whether new devices must enter a code, and which devices have paired.
++ * Everything goes through that app's settings provider, and its service to
++ * start and stop it, as the launcher's Streaming tile does, so the two always
++ * agree. The provider announces every change on {@link #URI}.
++ */
++public final class AirPlayClient {
++
++    private static final String TAG = "AirPlayClient";
++    private static final String PACKAGE = "org.lineageos.tv.airplay";
++    private static final String AUTHORITY = "org.lineageos.tv.airplay.settings";
++    private static final ComponentName SERVICE =
++            new ComponentName(PACKAGE, PACKAGE + ".AirPlayService");
++
++    /** Observe this to hear about any change, made here or anywhere else. */
++    static final Uri URI = Uri.parse("content://" + AUTHORITY);
++
++    /** The state as the receiver reports it. */
++    static final class State {
++        final boolean enabled;
++        final boolean requireCode;
++        final String name;
++        /** Paired devices: keys and names in step, ordered by name. */
++        final String[] keys;
++        final String[] names;
++
++        private State(Bundle b) {
++            enabled = b.getBoolean("enabled");
++            requireCode = b.getBoolean("require_pin", true);
++            name = b.getString("name", "");
++            String[] k = b.getStringArray("paired_keys");
++            String[] n = b.getStringArray("paired_names");
++            keys = k == null ? new String[0] : k;
++            names = n == null || n.length != keys.length ? new String[keys.length] : n;
++        }
++    }
++
++    private AirPlayClient() {
++    }
++
++    /** Whether this build has the receiver at all. */
++    public static boolean isInstalled(Context context) {
++        return context.getPackageManager().resolveContentProvider(AUTHORITY, 0) != null;
++    }
++
++    @Nullable
++    static State get(Context context) {
++        return call(context, "get", null, null);
++    }
++
++    /** A running receiver restarts, so this applies at once. */
++    @Nullable
++    static State setRequireCode(Context context, boolean on) {
++        Bundle extras = new Bundle();
++        extras.putBoolean("value", on);
++        return call(context, "set_require_pin", null, extras);
++    }
++
++    /** A null key forgets every device. */
++    @Nullable
++    static State forget(Context context, @Nullable String key) {
++        return call(context, "forget", key, null);
++    }
++
++    /**
++     * Settings is in the foreground, so a plain startService is allowed, and
++     * is right for stopping too: see the Streaming tile.
++     */
++    static void setEnabled(Context context, boolean on) {
++        try {
++            context.startService(new Intent(PACKAGE + (on ? ".START" : ".STOP"))
++                    .setComponent(SERVICE));
++        } catch (RuntimeException e) {
++            Log.e(TAG, "could not " + (on ? "start" : "stop") + " the receiver", e);
++        }
++    }
++
++    @Nullable
++    private static State call(Context context, String method, @Nullable String arg,
++            @Nullable Bundle extras) {
++        try {
++            Bundle state = context.getContentResolver().call(AUTHORITY, method, arg, extras);
++            return state == null ? null : new State(state);
++        } catch (RuntimeException e) {
++            Log.e(TAG, AUTHORITY + ": " + method + " failed", e);
++            return null;
++        }
++    }
++}
+diff --git a/Settings/src/com/android/tv/settings/device/airplay/AirPlayCodeFragment.java b/Settings/src/com/android/tv/settings/device/airplay/AirPlayCodeFragment.java
+new file mode 100644
+index 000000000..870bda7ec
+--- /dev/null
++++ b/Settings/src/com/android/tv/settings/device/airplay/AirPlayCodeFragment.java
+@@ -0,0 +1,84 @@
++/*
++ * SPDX-FileCopyrightText: 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.tv.settings.device.airplay;
++
++import android.database.ContentObserver;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++
++import androidx.annotation.Keep;
++import androidx.preference.Preference;
++
++import com.android.tv.settings.R;
++import com.android.tv.settings.RadioPreference;
++import com.android.tv.settings.SettingsPreferenceFragment;
++
++/**
++ * Settings > System > AirPlay > New devices: ask for a code, or not. A page
++ * of its own rather than a switch, so that turning the code off is a
++ * deliberate choice made with its consequence in view.
++ */
++@Keep
++public class AirPlayCodeFragment extends SettingsPreferenceFragment
++        implements Preference.OnPreferenceChangeListener {
++
++    private static final String KEY_ON = "code_on";
++    private static final String KEY_OFF = "code_off";
++
++    /** This page is also the preview beside AirPlayFragment, so follow changes. */
++    private final ContentObserver mObserver =
++            new ContentObserver(new Handler(Looper.getMainLooper())) {
++                @Override
++                public void onChange(boolean selfChange) {
++                    refresh();
++                }
++            };
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        setPreferencesFromResource(R.xml.airplay_code, null);
++        findPreference(KEY_ON).setOnPreferenceChangeListener(this);
++        findPreference(KEY_OFF).setOnPreferenceChangeListener(this);
++    }
++
++    @Override
++    public void onStart() {
++        super.onStart();
++        try {
++            getContext().getContentResolver().registerContentObserver(
++                    AirPlayClient.URI, false, mObserver);
++        } catch (SecurityException e) {
++            // Still shows the state as of now; it just will not follow it.
++        }
++        refresh();
++    }
++
++    @Override
++    public void onStop() {
++        getContext().getContentResolver().unregisterContentObserver(mObserver);
++        super.onStop();
++    }
++
++    private void refresh() {
++        AirPlayClient.State state = getContext() == null ? null : AirPlayClient.get(getContext());
++        if (state != null) {
++            ((RadioPreference) findPreference(KEY_ON)).setChecked(state.requireCode);
++            ((RadioPreference) findPreference(KEY_OFF)).setChecked(!state.requireCode);
++        }
++    }
++
++    @Override
++    public boolean onPreferenceChange(Preference preference, Object newValue) {
++        RadioPreference radio = (RadioPreference) preference;
++        if (radio.isChecked()) {
++            return false;
++        }
++        radio.clearOtherRadioPreferences(getPreferenceScreen());
++        AirPlayClient.setRequireCode(getContext(), KEY_ON.equals(radio.getKey()));
++        radio.setChecked(true);
++        return true;
++    }
++}
+diff --git a/Settings/src/com/android/tv/settings/device/airplay/AirPlayForgetFragment.java b/Settings/src/com/android/tv/settings/device/airplay/AirPlayForgetFragment.java
+new file mode 100644
+index 000000000..714ca8a87
+--- /dev/null
++++ b/Settings/src/com/android/tv/settings/device/airplay/AirPlayForgetFragment.java
+@@ -0,0 +1,87 @@
++/*
++ * SPDX-FileCopyrightText: 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.tv.settings.device.airplay;
++
++import android.content.Context;
++import android.os.Bundle;
++
++import androidx.annotation.Keep;
++import androidx.annotation.Nullable;
++import androidx.preference.Preference;
++import androidx.preference.PreferenceScreen;
++
++import com.android.tv.settings.BaseSettingsFragment;
++import com.android.tv.settings.R;
++import com.android.tv.settings.SettingsPreferenceFragment;
++import com.android.tv.twopanelsettings.TwoPanelSettingsFragment;
++
++/** Confirms forgetting one paired AirPlay device, or all of them. */
++@Keep
++public class AirPlayForgetFragment extends SettingsPreferenceFragment {
++
++    private static final String ARG_KEY = "airplay_key";
++    private static final String ARG_NAME = "airplay_name";
++    private static final String KEY_FORGET = "forget";
++    private static final String KEY_CANCEL = "cancel";
++
++    /** A null key means every device. */
++    static void prepareArgs(Bundle args, @Nullable String key, @Nullable String name) {
++        args.putString(ARG_KEY, key);
++        args.putString(ARG_NAME, name);
++    }
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        Context themed = getPreferenceManager().getContext();
++        PreferenceScreen screen = getPreferenceManager().createPreferenceScreen(themed);
++        boolean all = getArguments() == null || getArguments().getString(ARG_KEY) == null;
++        screen.setTitle(all ? getString(R.string.airplay_forget_all_title)
++                : getString(R.string.airplay_forget_title, getArguments().getString(ARG_NAME)));
++
++        Preference message = new Preference(themed);
++        message.setTitle(all ? R.string.airplay_forget_all_message
++                : R.string.airplay_forget_message);
++        message.setSelectable(false);
++        screen.addPreference(message);
++
++        Preference forget = new Preference(themed);
++        forget.setKey(KEY_FORGET);
++        forget.setTitle(R.string.airplay_forget);
++        screen.addPreference(forget);
++
++        Preference cancel = new Preference(themed);
++        cancel.setKey(KEY_CANCEL);
++        cancel.setTitle(android.R.string.cancel);
++        screen.addPreference(cancel);
++
++        setPreferenceScreen(screen);
++    }
++
++    @Override
++    public boolean onPreferenceTreeClick(Preference preference) {
++        if (KEY_FORGET.equals(preference.getKey())) {
++            AirPlayClient.forget(getContext(),
++                    getArguments() == null ? null : getArguments().getString(ARG_KEY));
++            back();
++            return true;
++        }
++        if (KEY_CANCEL.equals(preference.getKey())) {
++            back();
++            return true;
++        }
++        return super.onPreferenceTreeClick(preference);
++    }
++
++    private void back() {
++        if (getCallbackFragment() instanceof TwoPanelSettingsFragment) {
++            TwoPanelSettingsFragment parent = (TwoPanelSettingsFragment) getCallbackFragment();
++            if (parent.isFragmentInTheMainPanel(this)) {
++                parent.navigateBack();
++            }
++        } else if (getCallbackFragment() instanceof BaseSettingsFragment) {
++            ((BaseSettingsFragment) getCallbackFragment()).navigateBack();
++        }
++    }
++}
+diff --git a/Settings/src/com/android/tv/settings/device/airplay/AirPlayFragment.java b/Settings/src/com/android/tv/settings/device/airplay/AirPlayFragment.java
+new file mode 100644
+index 000000000..14de967ff
+--- /dev/null
++++ b/Settings/src/com/android/tv/settings/device/airplay/AirPlayFragment.java
+@@ -0,0 +1,162 @@
++/*
++ * SPDX-FileCopyrightText: 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.android.tv.settings.device.airplay;
++
++import android.content.Context;
++import android.database.ContentObserver;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.Looper;
++import android.text.TextUtils;
++import android.util.Log;
++
++import androidx.annotation.Keep;
++import androidx.preference.Preference;
++import androidx.preference.PreferenceCategory;
++import androidx.preference.TwoStatePreference;
++
++import com.android.tv.settings.R;
++import com.android.tv.settings.SettingsPreferenceFragment;
++import com.android.tv.twopanelsettings.TwoPanelSettingsFragment;
++
++import java.util.Arrays;
++
++/**
++ * Settings > System > AirPlay: the receiver's switch, the name iPhones and
++ * Macs show, whether new devices must enter a code, and the paired devices.
++ * The receiver's app keeps all of it (see {@link AirPlayClient}); this page
++ * only shows it and asks for changes, and follows changes made elsewhere,
++ * such as from the launcher's Streaming tile or a device pairing.
++ */
++@Keep
++public class AirPlayFragment extends SettingsPreferenceFragment
++        implements Preference.OnPreferenceChangeListener {
++
++    private static final String TAG = "AirPlayFragment";
++    private static final String KEY_ENABLED = "airplay_enabled";
++    private static final String KEY_NAME = "airplay_name";
++    private static final String KEY_CODE = "airplay_code";
++    private static final String KEY_PAIRED = "airplay_paired";
++
++    private final ContentObserver mObserver =
++            new ContentObserver(new Handler(Looper.getMainLooper())) {
++                @Override
++                public void onChange(boolean selfChange) {
++                    refresh();
++                }
++            };
++
++    /** The paired devices last shown, so the list is only rebuilt when it changes. */
++    private String mShownDevices;
++
++    @Override
++    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
++        setPreferencesFromResource(R.xml.airplay, null);
++        findPreference(KEY_ENABLED).setOnPreferenceChangeListener(this);
++    }
++
++    @Override
++    public void onStart() {
++        super.onStart();
++        try {
++            getContext().getContentResolver().registerContentObserver(
++                    AirPlayClient.URI, false, mObserver);
++        } catch (SecurityException e) {
++            Log.e(TAG, "cannot follow the receiver's changes", e);
++        }
++        refresh();
++    }
++
++    @Override
++    public void onStop() {
++        getContext().getContentResolver().unregisterContentObserver(mObserver);
++        super.onStop();
++    }
++
++    @Override
++    public boolean onPreferenceChange(Preference preference, Object newValue) {
++        // The switch moves now; the receiver confirms through the observer,
++        // and refresh() puts it back if it did not start.
++        AirPlayClient.setEnabled(getContext(), (Boolean) newValue);
++        return true;
++    }
++
++    private void refresh() {
++        Context context = getContext();
++        AirPlayClient.State state = context == null ? null : AirPlayClient.get(context);
++        if (state == null) {
++            return;
++        }
++        ((TwoStatePreference) findPreference(KEY_ENABLED)).setChecked(state.enabled);
++        findPreference(KEY_NAME).setSummary(state.name);
++        findPreference(KEY_CODE).setSummary(state.requireCode
++                ? R.string.airplay_code_summary_on : R.string.airplay_code_summary_off);
++
++        String devices = Arrays.toString(state.keys) + Arrays.toString(state.names);
++        if (devices.equals(mShownDevices)) {
++            return;
++        }
++        mShownDevices = devices;
++        rebuildPaired(state);
++        refreshPreview();
++    }
++
++    private void rebuildPaired(AirPlayClient.State state) {
++        PreferenceCategory paired = findPreference(KEY_PAIRED);
++        paired.removeAll();
++        Context themed = getPreferenceManager().getContext();
++        if (state.keys.length == 0) {
++            Preference none = new Preference(themed);
++            none.setTitle(R.string.airplay_paired_none);
++            none.setSummary(R.string.airplay_paired_none_summary);
++            none.setSelectable(false);
++            paired.addPreference(none);
++            return;
++        }
++        for (int i = 0; i < state.keys.length; i++) {
++            String name = TextUtils.isEmpty(state.names[i])
++                    ? getString(R.string.airplay_unnamed_device) : state.names[i];
++            Preference device = new Preference(themed);
++            // Keyed by the device, not its position: the two-panel view keeps
++            // a row's preview while its key is unchanged, so a positional key
++            // would go on previewing a device that has just been forgotten.
++            device.setKey("device_" + state.keys[i]);
++            device.setTitle(name);
++            device.setFragment(AirPlayForgetFragment.class.getName());
++            AirPlayForgetFragment.prepareArgs(device.getExtras(), state.keys[i], name);
++            paired.addPreference(device);
++        }
++        if (state.keys.length > 1) {
++            Preference all = new Preference(themed);
++            all.setKey("forget_all");
++            all.setTitle(R.string.airplay_forget_all);
++            all.setFragment(AirPlayForgetFragment.class.getName());
++            AirPlayForgetFragment.prepareArgs(all.getExtras(), null, null);
++            paired.addPreference(all);
++        }
++    }
++
++    /**
++     * The rows just changed under the focus, typically because a device was
++     * forgotten from its own page. Going back from that page leaves it in the
++     * preview panel, so ask for a preview of whichever row has the focus now,
++     * once the list has settled.
++     */
++    private void refreshPreview() {
++        if (!(getCallbackFragment() instanceof TwoPanelSettingsFragment) || getListView() == null) {
++            return;
++        }
++        TwoPanelSettingsFragment parent = (TwoPanelSettingsFragment) getCallbackFragment();
++        getListView().post(() -> {
++            if (!isAdded()) {
++                return;
++            }
++            Preference chosen = TwoPanelSettingsFragment.getChosenPreference(this);
++            if (chosen != null) {
++                parent.refocusPreferenceForceRefresh(chosen, this);
++            }
++        });
++    }
++}
+-- 
+2.43.0
+

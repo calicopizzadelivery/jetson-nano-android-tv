@@ -16,6 +16,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
+import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.AudioAttributes;
@@ -105,6 +106,22 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     private final VideoRenderer video = new VideoRenderer();
     private UxPlay uxplay;
     private ClientRegistry registry;
+    /** What senders see now, for telling whether a rename needs a restart. */
+    private volatile String advertisedName;
+
+    /**
+     * The receiver advertises the device name, so renaming the box in
+     * Settings restarts it under the new one, unless PROP_NAME overrides it.
+     */
+    private final ContentObserver deviceNameObserver = new ContentObserver(main) {
+        @Override
+        public void onChange(boolean selfChange) {
+            String name = receiverName(AirPlayService.this);
+            if (uxplay != null && !name.equals(advertisedName)) {
+                endSession("the device was renamed");
+            }
+        }
+    };
 
     private AudioManager audioManager;
     private AudioFocusRequest focusRequest;
@@ -183,6 +200,8 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         publishState();
 
         setEnabled(true);
+        getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(Settings.Global.DEVICE_NAME), false, deviceNameObserver);
         registry = new ClientRegistry(this);
         uxplay = new UxPlay(this, this, registry);
         control.execute(this::startServer);
@@ -198,7 +217,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
      * applies now rather than at the next boot. That ends any stream in
      * progress, which is fine for a setting changed on the TV itself.
      */
-    static void setRequirePin(boolean on) {
+    static void setRequirePin(Context context, boolean on) {
         if (on == requirePin()) {
             return;
         }
@@ -211,6 +230,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         }
         Log.i(TAG, on ? "new devices must now enter the PIN"
                 : "PIN off: any device on the network may stream");
+        AirPlaySettingsProvider.notifyChanged(context);
         AirPlayService service = running;
         if (service != null) {
             service.main.post(() -> service.endSession("the PIN setting changed"));
@@ -232,6 +252,8 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         boolean requirePin = requirePin();
         int port = uxplay.start(name, deviceId(),
                 new File(getFilesDir(), "uxplay.pem").getAbsolutePath(), requirePin);
+        advertisedName = name;
+        AirPlaySettingsProvider.notifyChanged(this);
         if (port > 0) {
             Log.i(TAG, "receiver enabled, advertising as \"" + name + "\" on port " + port
                     + (requirePin ? "; PIN required for new devices, " + registry.size()
@@ -269,6 +291,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     private boolean setEnabled(boolean enabled) {
         try {
             SystemProperties.set(PROP_ENABLED, Boolean.toString(enabled));
+            AirPlaySettingsProvider.notifyChanged(this);
             return true;
         } catch (RuntimeException e) {
             Log.e(TAG, "could not set " + PROP_ENABLED + "; is the sepolicy for it installed?", e);
@@ -278,6 +301,7 @@ public class AirPlayService extends Service implements UxPlay.Listener {
 
     @Override
     public void onDestroy() {
+        getContentResolver().unregisterContentObserver(deviceNameObserver);
         setEnabled(false);
         abandonFocus();
         MirrorActivity.finishIfShowing();

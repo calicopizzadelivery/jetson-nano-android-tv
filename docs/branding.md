@@ -23,8 +23,8 @@ product `build.prop` after the vendor one.
 **The device name is a default, stored at first boot.** A fresh install
 starts as JetsonTV. A box that was already set up keeps the name it has
 until it is renamed in Settings (or `settings put global device_name
-JetsonTV`). Renaming it renames the AirPlay receiver too, once the receiver
-restarts (Streaming tile off and on, or a reboot).
+JetsonTV`). Renaming it renames the AirPlay receiver too: the receiver
+watches the device name and restarts under the new one.
 
 What stays NVIDIA on purpose: `ro.product.manufacturer` (NVIDIA) and
 `ro.product.model` (Jetson Nano). They describe the hardware, which is what
