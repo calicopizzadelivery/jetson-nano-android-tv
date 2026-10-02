@@ -38,6 +38,14 @@ PRODUCT_PRODUCT_PROPERTIES += \
     bluetooth.device.default_name=JetsonTV \
     ro.config.wallpaper=/product/media/wallpaper/earthset.jpg
 
+# Key layouts for 8BitDo pads in X-input mode (USB or their 2.4 GHz
+# receiver), which xpad drives once kernel/0002 lets it claim 8BitDo's vendor
+# ID. Android has none for those IDs, and its generic layout swaps the right
+# stick and the triggers on an xpad device. /product/usr is searched first.
+PRODUCT_COPY_FILES += \
+    $(foreach f,$(wildcard vendor/jetson-tv/Input/keylayout/*.kl),\
+        $(f):$(TARGET_COPY_OUT_PRODUCT)/usr/keylayout/$(notdir $(f)))
+
 # Third-party apps, from PrebuiltApps/apps.json via prebuilt_apps.py, which
 # tree-local-changes.sh runs before every build. A plain include, not an
 # -include: a build that skipped that step must fail, not quietly ship

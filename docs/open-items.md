@@ -141,10 +141,10 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     The gap is X-input over USB or 8BitDo's 2.4 GHz receiver: newer pads
     report 8BitDo's own vendor ID there (`2dc8:3106` Ultimate / Pro 2 wired,
     `2dc8:310a` Ultimate 2C, plus the Ultimate 2), and this 4.9 `xpad` does
-    not list `0x2dc8` at all. Upstream added it in 2024-25. Backport
-    `XPAD_XBOX360_VENDOR(0x2dc8)` and those device entries into the kernel
-    fork, then verify with a real pad: buttons, sticks and triggers, rumble,
-    and in Moonlight, Lemuroid and Kodi.
+    not list `0x2dc8` at all. Upstream added it in 2024-25. *Backported 1
+    October (kernel/0002), with key layouts for the seven IDs; in the image
+    and booted.* Still to do: verify with a real pad (buttons, sticks and
+    triggers, rumble, and in Moonlight, Lemuroid and Kodi).
 
 ### Moonlight and Steam Link on this platform
 

@@ -216,6 +216,23 @@ Tegra" reports that held back 19.1 and 20.
 **Status**: verified present in the built kernel via `/proc/config.gz`.
 Pairing itself is still unproven — that needs a radio.
 
+## kernel/0002 — xpad: 8BitDo controllers
+
+A backport of upstream xpad's 8BitDo support (Linux 971fa7ea8621,
+2026-09-14). In X-input mode, on a cable or their 2.4 GHz receiver, 8BitDo's
+newer pads report their own vendor ID, `0x2dc8`, which this 4.9 driver did
+not list, so nothing bound to them. Adds the vendor-wide Xbox 360 and Xbox
+One interface matches for `0x2dc8` and upstream's seven named entries.
+`2dc8:200f` goes in without upstream's `MAP_SHARE_BUTTON`, which 4.9 lacks.
+
+Paired with seven key layouts in `scripts/in-container/Input/keylayout`,
+installed to `/product/usr/keylayout`: without them Android's generic layout
+puts an xpad pad's triggers on the right-stick axes.
+
+**Status**: builds, boots, and is in the running kernel; the layouts are on
+the device. Not yet tested with a pad. Upstreamable only in the sense that it
+is upstream already: this is for kernels older than those commits.
+
 ## Catapult/0004 — make the audio output tile a picker
 
 The tile reported the live output and then opened Sound settings, which on this

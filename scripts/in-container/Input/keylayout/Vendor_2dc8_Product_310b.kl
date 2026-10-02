@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 The LineageOS Project
+# SPDX-License-Identifier: Apache-2.0
+#
+# 8BitDo Ultimate 2 Wireless Controller (2.4 GHz receiver or wired), in
+# X-input mode: driven by xpad as an Xbox 360 pad (2dc8:310b, kernel/0002).
+# The mapping is AOSP's for Microsoft's own Xbox 360 pads
+# (Vendor_045e_Product_028e.kl). Without a layout for this ID Android falls
+# back to Generic.kl, which reads xpad's right stick (RX/RY) as a second pair
+# of axes and its triggers (Z/RZ) as the right stick. Buttons are by position,
+# as on an Xbox pad: on Nintendo-labelled 8BitDo pads the button marked B
+# produces BUTTON_A.
+
+key 304   BUTTON_A
+key 305   BUTTON_B
+key 307   BUTTON_X
+key 308   BUTTON_Y
+key 310   BUTTON_L1
+key 311   BUTTON_R1
+key 314   BUTTON_SELECT
+key 315   BUTTON_START
+key 316   BUTTON_MODE
+key 317   BUTTON_THUMBL
+key 318   BUTTON_THUMBR
+
+# Left stick
+axis 0x00 X flat 4096
+axis 0x01 Y flat 4096
+# Right stick: Z/RZ, where Android expects it, not RX/RY
+axis 0x03 Z flat 4096
+axis 0x04 RZ flat 4096
+# Triggers
+axis 0x02 LTRIGGER
+axis 0x05 RTRIGGER
+# D-pad
+axis 0x10 HAT_X
+axis 0x11 HAT_Y

@@ -133,6 +133,23 @@ install_branding() {
     return 0
 }
 
+# Key layouts for input devices the platform has none for: see
+# Input/keylayout and jetson-tv.mk.
+install_input() {
+    local src="/opt/jetson-tv/Input"
+    local dst="${SRC}/vendor/jetson-tv/Input"
+    [[ -d ${src} ]] || return 0
+    if [[ -d ${dst} ]] && diff -rq "${src}" "${dst}" >/dev/null 2>&1; then
+        note "Input already current"
+        return 0
+    fi
+    rm -rf "${dst}"
+    mkdir -p "$(dirname "${dst}")"
+    cp -r "${src}" "${dst}"
+    note "Input installed to vendor/jetson-tv"
+    return 0
+}
+
 # The product makefile that puts AmbientDream in the image. Lives beside the
 # app rather than in device/nvidia/porg so that porg's own tree carries only an
 # inherit-product-if-exists and still builds without us.
@@ -163,6 +180,7 @@ install_raopsend
 install_ambient_dream
 install_airplay_receiver
 install_branding
+install_input
 install_prebuilt_apps
 install_vendor_mk
 note "done"
