@@ -114,6 +114,13 @@ works**, but only because of two fixes this needed:
 - **The launcher showed Lemuroid twice**, because it has separate TV and
   phone activities. Catapult/0009 skips an app's phone launcher when the
   package has a TV one.
+- **The picker could not be driven by a d-pad** (found 3 October, with a
+  game controller). Directional focus does not cross from DocumentsUI's
+  header into its file list, and the Tab key that would is on no remote or
+  controller, so the files were unreachable: six DPAD_DOWN presses moved
+  nothing. Our DocumentsUI fork focuses the first document once a listing
+  loads on a leanback build. Focus still starts on the header's button when
+  one is shown; one press now leaves it, where before it could not be left.
 
 Games themselves are untested: no ROM was loaded.
 

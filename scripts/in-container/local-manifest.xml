@@ -36,6 +36,16 @@
            name="calicopizzadelivery/android_packages_apps_Catapult"
            revision="refs/heads/lineage-22.2-jetson-tv" />
 
+  <!-- The file picker, for one fix: on a television, directional focus does
+       not cross from its toolbar into the file list, and the Tab key that
+       would is on no remote or game controller, so the files are unreachable.
+       Android TV does not normally ship DocumentsUI at all; we add it so apps
+       asking for a folder (Lemuroid) get a real picker. -->
+  <remove-project path="packages/apps/DocumentsUI" optional="true" />
+  <project path="packages/apps/DocumentsUI" remote="github"
+           name="calicopizzadelivery/android_packages_apps_DocumentsUI"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
   <!-- The ATV device config, for one line: its config_deviceKeyHandler*
        arrays. They are single resources, so a product overlay replaces them
        wholesale rather than appending, and a product overlay listed after

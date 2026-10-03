@@ -177,7 +177,9 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
       off, apps get `BUTTON_MODE`, so Moonlight hands the host a real Guide
       button for Steam Big Picture. Both verified on porg. Moonlight also
       synthesises Guide from Start+Select either way.
-    Still to do: the pad inside Lemuroid (needs a ROM) and Kodi.
+    Still to do: the pad inside Lemuroid (needs a ROM) and Kodi. Lemuroid's
+    folder picker was unreachable with a d-pad until 3 October; see
+    `docs/prebuilt-apps.md` and the DocumentsUI fork.
 
 ### Moonlight and Steam Link on this platform
 

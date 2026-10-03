@@ -16,6 +16,7 @@ DST="${SRC}/.repo/local_manifests/zz-jetson-tv.xml"
 PROJECTS=(
     device/nvidia/porg
     device/lineage/atv
+    packages/apps/DocumentsUI
     device/nvidia/tegra-common
     kernel/nvidia/kernel-4.9
     packages/apps/TvSettings
