@@ -18,7 +18,14 @@ key 310   BUTTON_L1
 key 311   BUTTON_R1
 key 314   BUTTON_SELECT
 key 315   BUTTON_START
-key 316   BUTTON_MODE
+# The Home / 8BitDo button. AOSP's Xbox layouts map this to BUTTON_MODE,
+# which nothing in the framework acts on, so on a TV it does nothing at
+# all. SHIELD's own remote and controller send a dedicated scancode for
+# HOME (172); this pad has only BTN_MODE, so it is mapped here instead.
+# No WAKE flag, matching SHIELD, where only DPAD_CENTER and ASSIST wake.
+# Note Android consumes HOME before any app sees it, so it cannot be
+# forwarded by Moonlight or bound by an emulator.
+key 316   HOME
 key 317   BUTTON_THUMBL
 key 318   BUTTON_THUMBR
 
