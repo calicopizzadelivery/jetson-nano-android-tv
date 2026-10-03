@@ -1,0 +1,126 @@
+From 255e9b51e848e0fcb9d3d79b0ca610b0cfd86982 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 14:36:59 -0500
+Subject: [PATCH] Let a d-pad reach the file list on a television
+
+On a touch device the picker is fine, and on a desktop Tab crosses from
+the header into the file list. On a television neither is true: there is
+no touch, no remote or game controller has a Tab key, and directional
+focus does not cross that boundary -- pressing down simply does nothing,
+so the files cannot be reached at all.
+
+SharedInputHandler already intends to catch this, forwarding unclaimed
+navigation keys to focusDirectoryList(), but those keys never arrive: the
+header consumes them first. Verified with injected key events -- six
+DPAD_DOWN presses moved nothing, while Tab jumped straight into the grid,
+after which the d-pad worked perfectly.
+
+So on leanback builds, once a listing has loaded, focus its first
+document. Not focusDirectoryList(): that focuses the first *visible*
+item, which may be a header message -- on a folder that cannot itself be
+picked, that is the "create new folder" button, which a d-pad then cannot
+leave. focusDocument() retries by itself once the holder exists.
+
+Verified on an Android TV build with a game controller's d-pad: the file
+grid is reachable and navigable, a folder opens, and "use this folder"
+can be reached. Focus still starts on the header button when one is
+shown, which one press now leaves -- before this it could not be left at
+all.
+
+Change-Id: Iacd5358e247435fe592d3ad04e612a6185de3cc6
+---
+ .../dirlist/DirectoryFragment.java            | 50 +++++++++++++++++++
+ 1 file changed, 50 insertions(+)
+
+diff --git a/src/com/android/documentsui/dirlist/DirectoryFragment.java b/src/com/android/documentsui/dirlist/DirectoryFragment.java
+index df4edf343..8aa5f8805 100644
+--- a/src/com/android/documentsui/dirlist/DirectoryFragment.java
++++ b/src/com/android/documentsui/dirlist/DirectoryFragment.java
+@@ -28,6 +28,7 @@ import android.content.ContentProviderClient;
+ import android.content.Context;
+ import android.content.Intent;
+ import android.content.IntentFilter;
++import android.content.pm.PackageManager;
+ import android.content.pm.UserProperties;
+ import android.database.Cursor;
+ import android.net.Uri;
+@@ -168,6 +169,19 @@ public class DirectoryFragment extends Fragment implements SwipeRefreshLayout.On
+     @Injected
+     @ContentScoped
+     private FocusManager mFocusManager;
++    /**
++     * True on a television. There is no touch there, and no Tab key on a
++     * remote or a game controller, so focus has to be put in the file list
++     * for it to be reachable at all. See ModelUpdateListener.
++     */
++    private boolean mIsLeanback;
++    /**
++     * Set when a listing finishes loading on leanback, cleared once the list
++     * has actually taken focus. The model update arrives before the list has
++     * laid out, and focusDirectoryList() does nothing until there is a
++     * visible item to focus, so the request has to wait for layout.
++     */
++    private boolean mPendingLeanbackFocus;
+ 
+     @Injected
+     @ContentScoped
+@@ -526,6 +540,34 @@ public class DirectoryFragment extends Fragment implements SwipeRefreshLayout.On
+             public void onLayoutCompleted(RecyclerView.State state) {
+                 super.onLayoutCompleted(state);
+                 mFocusManager.onLayoutCompleted();
++
++                // Directional focus does not cross from the toolbar into this
++                // list, and no remote or game controller has the Tab key that
++                // would, so on a television the files are otherwise
++                // unreachable. Cleared as soon as it takes, so focus is never
++                // pulled back from a user who has moved it themselves.
++                // Focus the first actual document, not focusDirectoryList():
++                // that takes the first *visible* item, which here is the
++                // "can't use this folder" header, leaving focus on a button
++                // the d-pad cannot leave. focusDocument() retries by itself
++                // once the holder exists, so asking once is enough.
++                // Re-assert until a document really holds focus. A listing
++                // settles over several layout passes, and an item focused on
++                // an earlier one loses focus when its view is recycled, after
++                // which the framework falls back to the first focusable view
++                // -- a button in the header. hasFocusedItem() is true only for
++                // a document, so this stops as soon as the job is done and
++                // never pulls focus back from a user who has moved it.
++                if (mPendingLeanbackFocus) {
++                    if (mFocusManager.hasFocusedItem()) {
++                        mPendingLeanbackFocus = false;
++                    } else {
++                        String[] ids = mModel.getModelIds();
++                        if (ids != null && ids.length > 0) {
++                            mFocusManager.focusDocument(ids[0]);
++                        }
++                    }
++                }
+             }
+         };
+ 
+@@ -542,6 +584,8 @@ public class DirectoryFragment extends Fragment implements SwipeRefreshLayout.On
+                 new DocsSelectionPredicate(mInjector.config, mState, mModel, mRecView);
+ 
+         mFocusManager = mInjector.getFocusManager(mRecView, mModel);
++        mIsLeanback = getContext().getPackageManager()
++                .hasSystemFeature(PackageManager.FEATURE_LEANBACK);
+         mActions = mInjector.getActionHandler(mContentLock);
+ 
+         mRecView.setAccessibilityDelegateCompat(
+@@ -1496,6 +1540,12 @@ public class DirectoryFragment extends Fragment implements SwipeRefreshLayout.On
+                         REFRESH_SPINNER_TIMEOUT);
+             }
+ 
++            // On a television, ask for the file list to take focus. Honoured
++            // in onLayoutCompleted below, once there is something to focus.
++            if (mIsLeanback && !mModel.isLoading() && !mFocusManager.hasFocusedItem()) {
++                mPendingLeanbackFocus = true;
++            }
++
+             if (!mModel.isLoading()) {
+                 mActivity.notifyDirectoryLoaded(
+                         mModel.doc != null ? mModel.doc.derivedUri : null);
+-- 
+2.43.0
+

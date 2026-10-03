@@ -17,6 +17,37 @@ regenerates them, and the drift between the two is checked by hand.
     cd /srv/build/jetson-tv/lineage/packages/apps/TvSettings
     git am /path/to/patches/TvSettings/0001-*.patch
 
+## DocumentsUI/0001 — let a d-pad reach the file list on a television
+
+Directional focus does not cross from DocumentsUI's header into its file list,
+and the Tab key that would is on no remote or game controller, so on a TV the
+files cannot be reached at all. `SharedInputHandler` already means to catch
+this — it forwards unclaimed navigation keys to `focusDirectoryList()` — but
+the header consumes them first. On leanback builds the first *document* of a
+loaded listing now takes focus; not `focusDirectoryList()`, which takes the
+first *visible* item, and on a folder that cannot itself be picked that is the
+"create new folder" button a d-pad then cannot leave.
+
+**Status**: verified from a flashed image with injected d-pad keys, after an
+8BitDo controller hit it in Lemuroid's folder picker: the grid is reached and
+navigated, a folder opens, and "use this folder" is reachable. Focus still
+starts on the header button when one is shown, which one press now leaves.
+**Upstreamable as-is** — it fixes the picker for any d-pad device, and Android
+TV is the case nobody tests. Worth sending to AOSP as well as LineageOS.
+
+## atv/0001 — let a product append its own device key handler
+
+`config_deviceKeyHandlerLibs` and `config_deviceKeyHandlerClasses` are one
+resource each, so a product that overlays them replaces this file rather than
+adding to it — and a product overlay listed *after* this one still loses, which
+the built RRO confirms. Appending from outside is therefore impossible, so
+JetsonTV's handler is listed here.
+
+**Status**: in the image and working. **Not upstreamable in this form** — it
+names our jar. The upstreamable version is the general problem: ATV products
+cannot add a key handler without editing this file. Worth raising with
+LineageOS as a question rather than a patch.
+
 ## TvSettings/0001 — say that Back skips accessory pairing
 
 The pairing step is shown during setup so a user with no input device can pair

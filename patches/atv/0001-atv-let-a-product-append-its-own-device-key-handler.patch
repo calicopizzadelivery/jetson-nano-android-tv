@@ -1,0 +1,40 @@
+From 2d7d320666659d3e1e50eebbb5467bd2d1795b57 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 12:40:25 -0500
+Subject: [PATCH] atv: let a product append its own device key handler
+
+The two key handler arrays are a single resource each, so a product that
+overlays them replaces this file's contents rather than adding to them --
+and a product overlay listed after this one does not win, so appending
+from outside is not possible either. JetsonTV needs a third handler for
+a game controller's Guide button, so it is listed here.
+
+The entry is harmless on a build without that jar: PhoneWindowManager
+logs the failed instantiation and carries on with the handlers that did
+load.
+
+Change-Id: I0561f7327f2af20a2bbdb29156f7370d75cdf732
+---
+ overlay/lineage-sdk/lineage/res/res/values/config.xml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/overlay/lineage-sdk/lineage/res/res/values/config.xml b/overlay/lineage-sdk/lineage/res/res/values/config.xml
+index 560cb48..604b755 100644
+--- a/overlay/lineage-sdk/lineage/res/res/values/config.xml
++++ b/overlay/lineage-sdk/lineage/res/res/values/config.xml
+@@ -8,10 +8,12 @@
+     <string-array name="config_deviceKeyHandlerLibs" translatable="false">
+         <item>/system_ext/priv-app/LineageParts/LineageParts.apk</item>
+         <item>/system_ext/priv-app/LineageParts/LineageParts.apk</item>
++        <item>/system_ext/framework/JetsonTVKeyHandler.jar</item>
+     </string-array>
+     <!-- Names of the key handler classes -->
+     <string-array name="config_deviceKeyHandlerClasses" translatable="false">
+         <item>org.lineageos.lineageparts.gestures.KeyHandler</item>
+         <item>org.lineageos.lineageparts.atv.KeyHandler</item>
++        <item>org.lineageos.jetsontv.keyhandler.GamepadKeyHandler</item>
+     </string-array>
+ </resources>
+-- 
+2.43.0
+
