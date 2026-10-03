@@ -114,9 +114,21 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
 ~~18d. **The box calls itself "SHIELD Android TV".**~~ Done 30 September: it
     is JetsonTV, for the device name, Bluetooth and AirPlay. See
     `docs/branding.md`.
-19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`). Several
-    statuses in `patches/README.md` are stale: porg/0002 now runs on hardware,
-    and Catapult/0001's Menu key is verified while its Settings key is not.
+19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`).
+    *`patches/README.md` was brought up to date 3 October: every entry now
+    carries a status, the DocumentsUI, atv, UxPlay and libplist changes are
+    exported, and the Shairport-era porg entries are marked superseded.*
+19a. **Send the upstreamable changes.** Nothing has been offered to anyone
+    yet. Ready as they stand: `DocumentsUI/0001` (a d-pad can reach the file
+    list — the strongest candidate, and AOSP as well as LineageOS),
+    `Catapult/0009`, `Catapult/0010`, `TvSettings/0002`, and the path half of
+    `tegra-common/0001` — **not** its Realtek half, which no radio has run.
+    Separately, to UxPlay: `uxplay/0003` and `uxplay/0004` are security fixes
+    reachable by any device on the LAN, and `uxplay/0002` bounds an ALAC
+    decoder other projects also took from Shairport. See `patches/README.md`.
+    `atv/0001` is not a patch to send but a question to raise: an ATV product
+    cannot add a device key handler without editing that file, because the two
+    arrays are single resources an overlay replaces rather than extends.
 
 ## Game streaming (new, 30 September)
 
