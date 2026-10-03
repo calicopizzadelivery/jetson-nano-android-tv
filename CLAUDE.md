@@ -361,8 +361,22 @@ Bypass it from the serial console:
 
     settings put global device_provisioned 1
     settings put secure user_setup_complete 1
+    settings put secure tv_user_setup_complete 1
     settings put global adb_enabled 1
     pm disable-user --user 0 org.lineageos.setupwizard
+
+**`tv_user_setup_complete` is not optional, and its absence is silent.**
+Found 2026-10-02, after a Home button that looked broken for an hour.
+`PhoneWindowManager.isUserSetupComplete()` ANDs the ordinary flag with
+`isTvUserSetupComplete()` on any leanback build, so with only
+`user_setup_complete` set the box still believes setup is running.
+`launchHomeFromHotKey()` then bails with `Not going home because user setup
+is in progress` in logcat, and **every HOME keypress does nothing** -- from a
+controller, from a SHIELD remote, or from `input keyevent 3`. The same
+predicate gates other key-launched actions in that file (app-launch
+shortcuts, modifier shortcuts), so expect more than Home to be dead without
+it. A box taken through the wizard normally sets it itself; only the bypass
+needs this line.
 
 adb notes: keep one long-lived adb container, because a fresh one generates a
 new RSA key each run and re-prompts (keys now persist in
