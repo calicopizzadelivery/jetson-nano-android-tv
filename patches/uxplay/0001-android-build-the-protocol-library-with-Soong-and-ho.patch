@@ -1,0 +1,2120 @@
+From 9cbe53ce0034e9fd178ff62e4c4a95138f135345 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 09:42:03 -0500
+Subject: [PATCH 1/6] android: build the protocol library with Soong and host
+ it over JNI
+
+UxPlay's lib/ -- pairing, FairPlay (playfair), decryption, NTP timing,
+llhttp -- built as libuxplay_airplay, and a JNI bridge, libuxplay_jni,
+that takes the place of uxplay.cpp and the GStreamer renderers. The
+receiving app (AirPlayReceiver in calicopizzadelivery/jetson-nano-android-tv)
+decodes with MediaCodec and plays with AudioTrack; this side only hands
+it finished frames.
+
+- android/uxplay_jni.c: raop_callbacks_t turned into Java calls on
+  org.lineageos.tv.airplay.UxPlay. Presentation times cross JNI already
+  shifted from lib/'s CLOCK_REALTIME to CLOCK_MONOTONIC, the base of
+  System.nanoTime() and MediaCodec's timed release. Threads UxPlay starts
+  are attached lazily and detached by a pthread key destructor.
+- android/dns_sd_android.c, android/include/dns_sd.h: the slice of the
+  dns_sd API that lib/dnssd.c uses. UxPlay still builds its own TXT
+  records; registering them is handed to the app, which uses NsdManager.
+- android/alac: Android ships no ALAC decoder, so audio-only streams are
+  decoded here, with David Hammerton's decoder (MIT) as carried by
+  shairport-sync. AAC-ELD and AAC-LC go up encoded; Android decodes those.
+- lib/crypto.c: pk_to_base64 with EVP_EncodeBlock. BoringSSL, the system
+  libcrypto, declares BIO_f_base64 but does not implement it, so the BIO
+  chain did not link. Same output, and no longer leaks the BUF_MEM.
+
+libcrypto is linked dynamically: BoringSSL is used as the system crypto
+library, which is what keeps GPLv3 and its licence compatible here.
+libplist comes from calicopizzadelivery/libplist, which adds its build.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: Iff25cd47c392d54946486ee704f1417e918653e2
+---
+ Android.bp               |   78 +++
+ android/alac/alac.c      | 1010 ++++++++++++++++++++++++++++++++++++++
+ android/alac/alac.h      |   77 +++
+ android/dns_sd_android.c |  131 +++++
+ android/include/dns_sd.h |   67 +++
+ android/uxplay_jni.c     |  631 ++++++++++++++++++++++++
+ lib/crypto.c             |   23 +-
+ 7 files changed, 2001 insertions(+), 16 deletions(-)
+ create mode 100644 Android.bp
+ create mode 100644 android/alac/alac.c
+ create mode 100644 android/alac/alac.h
+ create mode 100644 android/dns_sd_android.c
+ create mode 100644 android/include/dns_sd.h
+ create mode 100644 android/uxplay_jni.c
+
+diff --git a/Android.bp b/Android.bp
+new file mode 100644
+index 0000000..804d318
+--- /dev/null
++++ b/Android.bp
+@@ -0,0 +1,78 @@
++// UxPlay on Android: the protocol library (lib/, llhttp, playfair) with a
++// dns_sd shim that hands service registration to NsdManager. The GStreamer
++// renderers and uxplay.cpp are not built; the Android app is the renderer.
++//
++// GPLv3. It links the platform's BoringSSL (libcrypto.so) as the system
++// crypto library, dynamically -- see the project's decision notes.
++//
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++cc_defaults {
++    name: "uxplay_defaults",
++    cflags: [
++        "-DSTANDALONE",
++        "-DTARGET_POSIX",
++        "-D_LINUX",
++        "-D_REENTRANT",
++        "-DNOHOLD",
++        // libplist 2.7: both version gates UxPlay tests for are met.
++        "-DPLIST_210",
++        "-DPLIST_230",
++        "-Wall",
++        "-Wno-unused-parameter",
++        "-Wno-unused-variable",
++        "-Wno-unused-function",
++        "-Wno-sign-compare",
++        // playfair: branch chains the compiler cannot prove exhaustive.
++        "-Wno-sometimes-uninitialized",
++    ],
++    compile_multilib: "64",
++}
++
++cc_library_static {
++    name: "libuxplay_airplay",
++    defaults: ["uxplay_defaults"],
++    srcs: [
++        "lib/*.c",
++        "lib/llhttp/*.c",
++        "lib/playfair/*.c",
++        "android/dns_sd_android.c",
++    ],
++    local_include_dirs: [
++        "android/include",
++        "lib/playfair",
++        "lib/llhttp",
++    ],
++    export_include_dirs: [
++        "lib",
++        "android/include",
++    ],
++    static_libs: ["libplist-2.0"],
++    export_static_lib_headers: ["libplist-2.0"],
++    shared_libs: [
++        "libcrypto",
++        "liblog",
++    ],
++}
++
++// Loaded by the AirPlay app (org.lineageos.tv.airplay) through JNI.
++cc_library_shared {
++    name: "libuxplay_jni",
++    defaults: ["uxplay_defaults"],
++    srcs: [
++        "android/uxplay_jni.c",
++        // ALAC, for audio-only AirPlay: Android has no ALAC decoder. MIT
++        // licensed, carried over from the shairport-sync port.
++        "android/alac/alac.c",
++    ],
++    local_include_dirs: ["android/alac"],
++    static_libs: [
++        "libuxplay_airplay",
++        "libplist-2.0",
++    ],
++    shared_libs: [
++        "libcrypto",
++        "liblog",
++    ],
++    header_libs: ["jni_headers"],
++}
+diff --git a/android/alac/alac.c b/android/alac/alac.c
+new file mode 100644
+index 0000000..daca81c
+--- /dev/null
++++ b/android/alac/alac.c
+@@ -0,0 +1,1010 @@
++/*
++ * ALAC (Apple Lossless Audio Codec) decoder
++ * Copyright (c) 2005 David Hammerton
++ * All rights reserved.
++ *
++ * This is the actual decoder.
++ *
++ * http://crazney.net/programs/itunes/alac.html
++ *
++ * Permission is hereby granted, free of charge, to any person
++ * obtaining a copy of this software and associated documentation
++ * files (the "Software"), to deal in the Software without
++ * restriction, including without limitation the rights to use,
++ * copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be
++ * included in all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
++ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
++ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
++ * OTHER DEALINGS IN THE SOFTWARE.
++ *
++ */
++
++static const int host_bigendian = 0;
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#ifdef _WIN32
++#include "stdint_win.h"
++#else
++#include <stdint.h>
++#endif
++
++#include "alac.h"
++
++#define _Swap32(v)                                                                                 \
++  do {                                                                                             \
++    v = (((v) & 0x000000FF) << 0x18) | (((v) & 0x0000FF00) << 0x08) |                              \
++        (((v) & 0x00FF0000) >> 0x08) | (((v) & 0xFF000000) >> 0x18);                               \
++  } while (0)
++
++#define _Swap16(v)                                                                                 \
++  do {                                                                                             \
++    v = (((v) & 0x00FF) << 0x08) | (((v) & 0xFF00) >> 0x08);                                       \
++  } while (0)
++
++struct {
++  signed int x : 24;
++} se_struct_24;
++#define SignExtend24(val) (se_struct_24.x = val)
++
++void alac_free(alac_file *alac) {
++  if (alac->predicterror_buffer_a)
++    free(alac->predicterror_buffer_a);
++  if (alac->predicterror_buffer_b)
++    free(alac->predicterror_buffer_b);
++
++  if (alac->outputsamples_buffer_a)
++    free(alac->outputsamples_buffer_a);
++  if (alac->outputsamples_buffer_b)
++    free(alac->outputsamples_buffer_b);
++
++  if (alac->uncompressed_bytes_buffer_a)
++    free(alac->uncompressed_bytes_buffer_a);
++  if (alac->uncompressed_bytes_buffer_b)
++    free(alac->uncompressed_bytes_buffer_b);
++
++  free(alac);
++}
++
++void alac_allocate_buffers(alac_file *alac) {
++  alac->predicterror_buffer_a = malloc(alac->setinfo_max_samples_per_frame * 4);
++  alac->predicterror_buffer_b = malloc(alac->setinfo_max_samples_per_frame * 4);
++
++  alac->outputsamples_buffer_a = malloc(alac->setinfo_max_samples_per_frame * 4);
++  alac->outputsamples_buffer_b = malloc(alac->setinfo_max_samples_per_frame * 4);
++
++  alac->uncompressed_bytes_buffer_a = malloc(alac->setinfo_max_samples_per_frame * 4);
++  alac->uncompressed_bytes_buffer_b = malloc(alac->setinfo_max_samples_per_frame * 4);
++}
++
++void alac_set_info(alac_file *alac, char *inputbuffer) {
++  char *ptr = inputbuffer;
++  ptr += 4; /* size */
++  ptr += 4; /* frma */
++  ptr += 4; /* alac */
++  ptr += 4; /* size */
++  ptr += 4; /* alac */
++
++  ptr += 4; /* 0 ? */
++
++  alac->setinfo_max_samples_per_frame = *(uint32_t *)ptr; /* buffer size / 2 ? */
++  if (!host_bigendian)
++    _Swap32(alac->setinfo_max_samples_per_frame);
++  ptr += 4;
++  alac->setinfo_7a = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_sample_size = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_rice_historymult = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_rice_initialhistory = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_rice_kmodifier = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_7f = *(uint8_t *)ptr;
++  ptr += 1;
++  alac->setinfo_80 = *(uint16_t *)ptr;
++  if (!host_bigendian)
++    _Swap16(alac->setinfo_80);
++  ptr += 2;
++  alac->setinfo_82 = *(uint32_t *)ptr;
++  if (!host_bigendian)
++    _Swap32(alac->setinfo_82);
++  ptr += 4;
++  alac->setinfo_86 = *(uint32_t *)ptr;
++  if (!host_bigendian)
++    _Swap32(alac->setinfo_86);
++  ptr += 4;
++  alac->setinfo_8a_rate = *(uint32_t *)ptr;
++  if (!host_bigendian)
++    _Swap32(alac->setinfo_8a_rate);
++
++  alac_allocate_buffers(alac);
++}
++
++/* stream reading */
++
++/* supports reading 1 to 16 bits, in big endian format */
++static uint32_t readbits_16(alac_file *alac, int bits) {
++  uint32_t result;
++  int new_accumulator;
++
++  result = (alac->input_buffer[0] << 16) | (alac->input_buffer[1] << 8) | (alac->input_buffer[2]);
++
++  /* shift left by the number of bits we've already read,
++   * so that the top 'n' bits of the 24 bits we read will
++   * be the return bits */
++  result = result << alac->input_buffer_bitaccumulator;
++
++  result = result & 0x00ffffff;
++
++  /* and then only want the top 'n' bits from that, where
++   * n is 'bits' */
++  result = result >> (24 - bits);
++
++  new_accumulator = (alac->input_buffer_bitaccumulator + bits);
++
++  /* increase the buffer pointer if we've read over n bytes. */
++  alac->input_buffer += (new_accumulator >> 3);
++
++  /* and the remainder goes back into the bit accumulator */
++  alac->input_buffer_bitaccumulator = (new_accumulator & 7);
++
++  return result;
++}
++
++/* supports reading 1 to 32 bits, in big endian format */
++static uint32_t readbits(alac_file *alac, int bits) {
++  int32_t result = 0;
++
++  if (bits > 16) {
++    bits -= 16;
++    result = readbits_16(alac, 16) << bits;
++  }
++
++  result |= readbits_16(alac, bits);
++
++  return result;
++}
++
++/* reads a single bit */
++static int readbit(alac_file *alac) {
++  int result;
++  int new_accumulator;
++
++  result = alac->input_buffer[0];
++
++  result = result << alac->input_buffer_bitaccumulator;
++
++  result = result >> 7 & 1;
++
++  new_accumulator = (alac->input_buffer_bitaccumulator + 1);
++
++  alac->input_buffer += (new_accumulator / 8);
++
++  alac->input_buffer_bitaccumulator = (new_accumulator % 8);
++
++  return result;
++}
++
++static void unreadbits(alac_file *alac, int bits) {
++  int new_accumulator = (alac->input_buffer_bitaccumulator - bits);
++
++  alac->input_buffer += (new_accumulator >> 3);
++
++  alac->input_buffer_bitaccumulator = (new_accumulator & 7);
++  if (alac->input_buffer_bitaccumulator < 0)
++    alac->input_buffer_bitaccumulator *= -1;
++}
++
++/* various implementations of count_leading_zero:
++ * the first one is the original one, the simplest and most
++ * obvious for what it's doing. never use this.
++ * then there are the asm ones. fill in as necessary
++ * and finally an unrolled and optimised c version
++ * to fall back to
++ */
++#if 0
++/* hideously inefficient. could use a bitmask search,
++ * alternatively bsr on x86,
++ */
++static int count_leading_zeros(int32_t input)
++{
++    int i = 0;
++    while (!(0x80000000 & input) && i < 32)
++    {
++        i++;
++        input = input << 1;
++    }
++    return i;
++}
++#elif defined(__GNUC__)
++/* for some reason the unrolled version (below) is
++ * actually faster than this. yay intel!
++ */
++static int count_leading_zeros(int input) { return __builtin_clz(input); }
++#elif defined(_MSC_VER) && defined(_M_IX86)
++static int count_leading_zeros(int input) {
++  int output = 0;
++  if (!input)
++    return 32;
++  __asm
++  {
++        mov eax, input;
++        mov edx, 0x1f;
++        bsr ecx, eax;
++        sub edx, ecx;
++        mov output, edx;
++  }
++  return output;
++}
++#else
++#warning using generic count leading zeroes. You may wish to write one for your CPU / compiler
++static int count_leading_zeros(int input) {
++  int output = 0;
++  int curbyte = 0;
++
++  curbyte = input >> 24;
++  if (curbyte)
++    goto found;
++  output += 8;
++
++  curbyte = input >> 16;
++  if (curbyte & 0xff)
++    goto found;
++  output += 8;
++
++  curbyte = input >> 8;
++  if (curbyte & 0xff)
++    goto found;
++  output += 8;
++
++  curbyte = input;
++  if (curbyte & 0xff)
++    goto found;
++  output += 8;
++
++  return output;
++
++found:
++  if (!(curbyte & 0xf0)) {
++    output += 4;
++  } else
++    curbyte >>= 4;
++
++  if (curbyte & 0x8)
++    return output;
++  if (curbyte & 0x4)
++    return output + 1;
++  if (curbyte & 0x2)
++    return output + 2;
++  if (curbyte & 0x1)
++    return output + 3;
++
++  /* shouldn't get here: */
++  return output + 4;
++}
++#endif
++
++#define RICE_THRESHOLD 8 // maximum number of bits for a rice prefix.
++
++static int32_t entropy_decode_value(alac_file *alac, int readSampleSize, int k,
++                                    int rice_kmodifier_mask) {
++  int32_t x = 0; // decoded value
++
++  // read x, number of 1s before 0 represent the rice value.
++  while (x <= RICE_THRESHOLD && readbit(alac)) {
++    x++;
++  }
++
++  if (x > RICE_THRESHOLD) {
++    // read the number from the bit stream (raw value)
++    int32_t value;
++
++    value = readbits(alac, readSampleSize);
++
++    // mask value
++    value &= (((uint32_t)0xffffffff) >> (32 - readSampleSize));
++
++    x = value;
++  } else {
++    if (k != 1) {
++      int extraBits = readbits(alac, k);
++
++      // x = x * (2^k - 1)
++      x *= (((1 << k) - 1) & rice_kmodifier_mask);
++
++      if (extraBits > 1)
++        x += extraBits - 1;
++      else
++        unreadbits(alac, 1);
++    }
++  }
++
++  return x;
++}
++
++static void entropy_rice_decode(alac_file *alac, int32_t *outputBuffer, int outputSize,
++                                int readSampleSize, int rice_initialhistory, int rice_kmodifier,
++                                int rice_historymult, int rice_kmodifier_mask) {
++  int outputCount;
++  int history = rice_initialhistory;
++  int signModifier = 0;
++
++  for (outputCount = 0; outputCount < outputSize; outputCount++) {
++    int32_t decodedValue;
++    int32_t finalValue;
++    int32_t k;
++
++    k = 31 - rice_kmodifier - count_leading_zeros((history >> 9) + 3);
++
++    if (k < 0)
++      k += rice_kmodifier;
++    else
++      k = rice_kmodifier;
++
++    // note: don't use rice_kmodifier_mask here (set mask to 0xFFFFFFFF)
++    decodedValue = entropy_decode_value(alac, readSampleSize, k, 0xFFFFFFFF);
++
++    decodedValue += signModifier;
++    finalValue = (decodedValue + 1) / 2; // inc by 1 and shift out sign bit
++    if (decodedValue & 1)                // the sign is stored in the low bit
++      finalValue *= -1;
++
++    outputBuffer[outputCount] = finalValue;
++
++    signModifier = 0;
++
++    // update history
++    history += (decodedValue * rice_historymult) - ((history * rice_historymult) >> 9);
++
++    if (decodedValue > 0xFFFF)
++      history = 0xFFFF;
++
++    // special case, for compressed blocks of 0
++    if ((history < 128) && (outputCount + 1 < outputSize)) {
++      int32_t blockSize;
++
++      signModifier = 1;
++
++      k = count_leading_zeros(history) + ((history + 16) / 64) - 24;
++
++      // note: blockSize is always 16bit
++      blockSize = entropy_decode_value(alac, 16, k, rice_kmodifier_mask);
++
++      // got blockSize 0s
++      if (blockSize > 0) {
++        memset(&outputBuffer[outputCount + 1], 0, blockSize * sizeof(*outputBuffer));
++        outputCount += blockSize;
++      }
++
++      if (blockSize > 0xFFFF)
++        signModifier = 0;
++
++      history = 0;
++    }
++  }
++}
++
++#define SIGN_EXTENDED32(val, bits) ((val << (32 - bits)) >> (32 - bits))
++
++#define SIGN_ONLY(v) ((v < 0) ? (-1) : ((v > 0) ? (1) : (0)))
++
++static void predictor_decompress_fir_adapt(int32_t *error_buffer, int32_t *buffer_out,
++                                           int output_size, int readsamplesize,
++                                           int16_t *predictor_coef_table, int predictor_coef_num,
++                                           int predictor_quantitization) {
++  int i;
++
++  /* first sample always copies */
++  *buffer_out = *error_buffer;
++
++  if (!predictor_coef_num) {
++    if (output_size <= 1)
++      return;
++    memcpy(buffer_out + 1, error_buffer + 1, (output_size - 1) * 4);
++    return;
++  }
++
++  if (predictor_coef_num == 0x1f) /* 11111 - max value of predictor_coef_num */
++  {                               /* second-best case scenario for fir decompression,
++                                   * error describes a small difference from the previous sample only
++                                   */
++    if (output_size <= 1)
++      return;
++    for (i = 0; i < output_size - 1; i++) {
++      int32_t prev_value;
++      int32_t error_value;
++
++      prev_value = buffer_out[i];
++      error_value = error_buffer[i + 1];
++      buffer_out[i + 1] = SIGN_EXTENDED32((prev_value + error_value), readsamplesize);
++    }
++    return;
++  }
++
++  /* read warm-up samples */
++  if (predictor_coef_num > 0) {
++    int li;
++    for (li = 0; li < predictor_coef_num; li++) {
++      int32_t val;
++
++      val = buffer_out[li] + error_buffer[li + 1];
++
++      val = SIGN_EXTENDED32(val, readsamplesize);
++
++      buffer_out[li + 1] = val;
++    }
++  }
++
++#if 0
++    /* 4 and 8 are very common cases (the only ones i've seen). these
++     * should be unrolled and optimised
++     */
++    if (predictor_coef_num == 4)
++    {
++        /* FIXME: optimised general case */
++        return;
++    }
++
++    if (predictor_coef_table == 8)
++    {
++        /* FIXME: optimised general case */
++        return;
++    }
++#endif
++
++  /* general case */
++  if (predictor_coef_num > 0) {
++    for (i = predictor_coef_num + 1; i < output_size; i++) {
++      int j;
++      int sum = 0;
++      int outval;
++      int error_val = error_buffer[i];
++
++      for (j = 0; j < predictor_coef_num; j++) {
++        sum += (buffer_out[predictor_coef_num - j] - buffer_out[0]) * predictor_coef_table[j];
++      }
++
++      outval = (1 << (predictor_quantitization - 1)) + sum;
++      outval = outval >> predictor_quantitization;
++      outval = outval + buffer_out[0] + error_val;
++      outval = SIGN_EXTENDED32(outval, readsamplesize);
++
++      buffer_out[predictor_coef_num + 1] = outval;
++
++      if (error_val > 0) {
++        int predictor_num = predictor_coef_num - 1;
++
++        while (predictor_num >= 0 && error_val > 0) {
++          int val = buffer_out[0] - buffer_out[predictor_coef_num - predictor_num];
++          int sign = SIGN_ONLY(val);
++
++          predictor_coef_table[predictor_num] -= sign;
++
++          val *= sign; /* absolute value */
++
++          error_val -= ((val >> predictor_quantitization) * (predictor_coef_num - predictor_num));
++
++          predictor_num--;
++        }
++      } else if (error_val < 0) {
++        int predictor_num = predictor_coef_num - 1;
++
++        while (predictor_num >= 0 && error_val < 0) {
++          int val = buffer_out[0] - buffer_out[predictor_coef_num - predictor_num];
++          int sign = -SIGN_ONLY(val);
++
++          predictor_coef_table[predictor_num] -= sign;
++
++          val *= sign; /* neg value */
++
++          error_val -= ((val >> predictor_quantitization) * (predictor_coef_num - predictor_num));
++
++          predictor_num--;
++        }
++      }
++
++      buffer_out++;
++    }
++  }
++}
++
++static void deinterlace_16(int32_t *buffer_a, int32_t *buffer_b, int16_t *buffer_out,
++                           int numchannels, int numsamples, uint8_t interlacing_shift,
++                           uint8_t interlacing_leftweight) {
++  int i;
++  if (numsamples <= 0)
++    return;
++
++  /* weighted interlacing */
++  if (interlacing_leftweight) {
++    for (i = 0; i < numsamples; i++) {
++      int32_t difference, midright;
++      int16_t left;
++      int16_t right;
++
++      midright = buffer_a[i];
++      difference = buffer_b[i];
++
++      right = midright - ((difference * interlacing_leftweight) >> interlacing_shift);
++      left = right + difference;
++
++      /* output is always little endian */
++      if (host_bigendian) {
++        _Swap16(left);
++        _Swap16(right);
++      }
++
++      buffer_out[i * numchannels] = left;
++      buffer_out[i * numchannels + 1] = right;
++    }
++
++    return;
++  }
++
++  /* otherwise basic interlacing took place */
++  for (i = 0; i < numsamples; i++) {
++    int16_t left, right;
++
++    left = buffer_a[i];
++    right = buffer_b[i];
++
++    /* output is always little endian */
++    if (host_bigendian) {
++      _Swap16(left);
++      _Swap16(right);
++    }
++
++    buffer_out[i * numchannels] = left;
++    buffer_out[i * numchannels + 1] = right;
++  }
++}
++
++static void deinterlace_24(int32_t *buffer_a, int32_t *buffer_b, int uncompressed_bytes,
++                           int32_t *uncompressed_bytes_buffer_a,
++                           int32_t *uncompressed_bytes_buffer_b, void *buffer_out, int numchannels,
++                           int numsamples, uint8_t interlacing_shift,
++                           uint8_t interlacing_leftweight) {
++  int i;
++  if (numsamples <= 0)
++    return;
++
++  /* weighted interlacing */
++  if (interlacing_leftweight) {
++    for (i = 0; i < numsamples; i++) {
++      int32_t difference, midright;
++      int32_t left;
++      int32_t right;
++
++      midright = buffer_a[i];
++      difference = buffer_b[i];
++
++      right = midright - ((difference * interlacing_leftweight) >> interlacing_shift);
++      left = right + difference;
++
++      if (uncompressed_bytes) {
++        uint32_t mask = ~(0xFFFFFFFF << (uncompressed_bytes * 8));
++        left <<= (uncompressed_bytes * 8);
++        right <<= (uncompressed_bytes * 8);
++
++        left |= uncompressed_bytes_buffer_a[i] & mask;
++        right |= uncompressed_bytes_buffer_b[i] & mask;
++      }
++
++      ((uint8_t *)buffer_out)[i * numchannels * 3] = (left) & 0xFF;
++      ((uint8_t *)buffer_out)[i * numchannels * 3 + 1] = (left >> 8) & 0xFF;
++      ((uint8_t *)buffer_out)[i * numchannels * 3 + 2] = (left >> 16) & 0xFF;
++
++      ((uint8_t *)buffer_out)[i * numchannels * 3 + 3] = (right) & 0xFF;
++      ((uint8_t *)buffer_out)[i * numchannels * 3 + 4] = (right >> 8) & 0xFF;
++      ((uint8_t *)buffer_out)[i * numchannels * 3 + 5] = (right >> 16) & 0xFF;
++    }
++
++    return;
++  }
++
++  /* otherwise basic interlacing took place */
++  for (i = 0; i < numsamples; i++) {
++    int32_t left, right;
++
++    left = buffer_a[i];
++    right = buffer_b[i];
++
++    if (uncompressed_bytes) {
++      uint32_t mask = ~(0xFFFFFFFF << (uncompressed_bytes * 8));
++      left <<= (uncompressed_bytes * 8);
++      right <<= (uncompressed_bytes * 8);
++
++      left |= uncompressed_bytes_buffer_a[i] & mask;
++      right |= uncompressed_bytes_buffer_b[i] & mask;
++    }
++
++    ((uint8_t *)buffer_out)[i * numchannels * 3] = (left) & 0xFF;
++    ((uint8_t *)buffer_out)[i * numchannels * 3 + 1] = (left >> 8) & 0xFF;
++    ((uint8_t *)buffer_out)[i * numchannels * 3 + 2] = (left >> 16) & 0xFF;
++
++    ((uint8_t *)buffer_out)[i * numchannels * 3 + 3] = (right) & 0xFF;
++    ((uint8_t *)buffer_out)[i * numchannels * 3 + 4] = (right >> 8) & 0xFF;
++    ((uint8_t *)buffer_out)[i * numchannels * 3 + 5] = (right >> 16) & 0xFF;
++  }
++}
++
++void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer, int *outputsize) {
++  int outbuffer_allocation_size = *outputsize; // initial value
++  int channels;
++  int32_t outputsamples = alac->setinfo_max_samples_per_frame;
++
++  /* setup the stream */
++  alac->input_buffer = inbuffer;
++  alac->input_buffer_bitaccumulator = 0;
++
++  channels = readbits(alac, 3);
++
++  *outputsize = outputsamples * alac->bytespersample;
++  if (*outputsize > outbuffer_allocation_size) {
++    fprintf(stderr, "FIXME: Not enough space if the output buffer for audio frame - E1.\n");
++    *outputsize = 0;
++    return;
++  }
++
++  switch (channels) {
++  case 0: /* 1 channel */
++  {
++    int hassize;
++    int isnotcompressed;
++    int readsamplesize;
++
++    int uncompressed_bytes;
++    int ricemodifier;
++
++    /* 2^result = something to do with output waiting.
++     * perhaps matters if we read > 1 frame in a pass?
++     */
++    readbits(alac, 4);
++
++    readbits(alac, 12); /* unknown, skip 12 bits */
++
++    hassize = readbits(alac, 1); /* the output sample size is stored soon */
++
++    uncompressed_bytes =
++        readbits(alac, 2); /* number of bytes in the (compressed) stream that are not compressed */
++
++    isnotcompressed = readbits(alac, 1); /* whether the frame is compressed */
++
++    if (hassize) {
++      /* now read the number of samples,
++       * as a 32bit integer */
++      outputsamples = readbits(alac, 32);
++      *outputsize = outputsamples * alac->bytespersample;
++      if (*outputsize > outbuffer_allocation_size) {
++        fprintf(stderr, "FIXME: Not enough space if the output buffer for audio frame - E2.\n");
++        *outputsize = 0;
++        return;
++      }
++    }
++
++    readsamplesize = alac->setinfo_sample_size - (uncompressed_bytes * 8);
++
++    if (!isnotcompressed) { /* so it is compressed */
++      int16_t predictor_coef_table[32];
++      int predictor_coef_num;
++      int prediction_type;
++      int prediction_quantitization;
++      int i;
++
++      /* skip 16 bits, not sure what they are. seem to be used in
++       * two channel case */
++      readbits(alac, 8);
++      readbits(alac, 8);
++
++      prediction_type = readbits(alac, 4);
++      prediction_quantitization = readbits(alac, 4);
++
++      ricemodifier = readbits(alac, 3);
++      predictor_coef_num = readbits(alac, 5);
++
++      /* read the predictor table */
++      for (i = 0; i < predictor_coef_num; i++) {
++        predictor_coef_table[i] = (int16_t)readbits(alac, 16);
++      }
++
++      if (uncompressed_bytes) {
++        int li;
++        for (li = 0; li < outputsamples; li++) {
++          alac->uncompressed_bytes_buffer_a[li] = readbits(alac, uncompressed_bytes * 8);
++        }
++      }
++
++      entropy_rice_decode(alac, alac->predicterror_buffer_a, outputsamples, readsamplesize,
++                          alac->setinfo_rice_initialhistory, alac->setinfo_rice_kmodifier,
++                          ricemodifier * alac->setinfo_rice_historymult / 4,
++                          (1 << alac->setinfo_rice_kmodifier) - 1);
++
++      if (prediction_type == 0) { /* adaptive fir */
++        predictor_decompress_fir_adapt(alac->predicterror_buffer_a, alac->outputsamples_buffer_a,
++                                       outputsamples, readsamplesize, predictor_coef_table,
++                                       predictor_coef_num, prediction_quantitization);
++      } else {
++        fprintf(stderr, "FIXME: unhandled prediction type for compressed case: %i\n",
++                prediction_type);
++        /* i think the only other prediction type (or perhaps this is just a
++         * boolean?) runs adaptive fir twice.. like:
++         * predictor_decompress_fir_adapt(predictor_error, tempout, ...)
++         * predictor_decompress_fir_adapt(predictor_error, outputsamples ...)
++         * little strange..
++         */
++      }
++
++    } else { /* not compressed, easy case */
++      if (alac->setinfo_sample_size <= 16) {
++        int i;
++        for (i = 0; i < outputsamples; i++) {
++          int32_t audiobits = readbits(alac, alac->setinfo_sample_size);
++
++          audiobits = SIGN_EXTENDED32(audiobits, alac->setinfo_sample_size);
++
++          alac->outputsamples_buffer_a[i] = audiobits;
++        }
++      } else {
++        int i;
++        for (i = 0; i < outputsamples; i++) {
++          int32_t audiobits;
++
++          audiobits = readbits(alac, 16);
++          /* special case of sign extension..
++           * as we'll be ORing the low 16bits into this */
++          audiobits = audiobits << (alac->setinfo_sample_size - 16);
++          audiobits |= readbits(alac, alac->setinfo_sample_size - 16);
++          audiobits = SignExtend24(audiobits);
++
++          alac->outputsamples_buffer_a[i] = audiobits;
++        }
++      }
++      uncompressed_bytes = 0; // always 0 for uncompressed
++    }
++
++    switch (alac->setinfo_sample_size) {
++    case 16: {
++      int i;
++      for (i = 0; i < outputsamples; i++) {
++        int16_t sample = alac->outputsamples_buffer_a[i];
++        if (host_bigendian)
++          _Swap16(sample);
++        ((int16_t *)outbuffer)[i * alac->numchannels] = sample;
++      }
++      break;
++    }
++    case 24: {
++      int i;
++      for (i = 0; i < outputsamples; i++) {
++        int32_t sample = alac->outputsamples_buffer_a[i];
++
++        if (uncompressed_bytes) {
++          uint32_t mask;
++          sample = sample << (uncompressed_bytes * 8);
++          mask = ~(0xFFFFFFFF << (uncompressed_bytes * 8));
++          sample |= alac->uncompressed_bytes_buffer_a[i] & mask;
++        }
++
++        ((uint8_t *)outbuffer)[i * alac->numchannels * 3] = (sample) & 0xFF;
++        ((uint8_t *)outbuffer)[i * alac->numchannels * 3 + 1] = (sample >> 8) & 0xFF;
++        ((uint8_t *)outbuffer)[i * alac->numchannels * 3 + 2] = (sample >> 16) & 0xFF;
++      }
++      break;
++    }
++    case 20:
++    case 32:
++      fprintf(stderr, "FIXME: unimplemented sample size %i\n", alac->setinfo_sample_size);
++      break;
++    default:
++      break;
++    }
++    break;
++  }
++  case 1: /* 2 channels */
++  {
++    int hassize;
++    int isnotcompressed;
++    int readsamplesize;
++
++    int uncompressed_bytes;
++
++    uint8_t interlacing_shift;
++    uint8_t interlacing_leftweight;
++
++    /* 2^result = something to do with output waiting.
++     * perhaps matters if we read > 1 frame in a pass?
++     */
++    readbits(alac, 4);
++
++    readbits(alac, 12); /* unknown, skip 12 bits */
++
++    hassize = readbits(alac, 1); /* the output sample size is stored soon */
++
++    uncompressed_bytes = readbits(
++        alac, 2); /* the number of bytes in the (compressed) stream that are not compressed */
++
++    isnotcompressed = readbits(alac, 1); /* whether the frame is compressed */
++
++    if (hassize) {
++      /* now read the number of samples,
++       * as a 32bit integer */
++      outputsamples = readbits(alac, 32);
++      *outputsize = outputsamples * alac->bytespersample;
++      if (*outputsize > outbuffer_allocation_size) {
++        fprintf(stderr, "FIXME: Not enough space if the output buffer for audio frame - E3.\n");
++        *outputsize = 0;
++        return;
++      }
++    }
++
++    readsamplesize = alac->setinfo_sample_size - (uncompressed_bytes * 8) + 1;
++
++    if (!isnotcompressed) { /* compressed */
++      int16_t predictor_coef_table_a[32];
++      int predictor_coef_num_a;
++      int prediction_type_a;
++      int prediction_quantitization_a;
++      int ricemodifier_a;
++
++      int16_t predictor_coef_table_b[32];
++      int predictor_coef_num_b;
++      int prediction_type_b;
++      int prediction_quantitization_b;
++      int ricemodifier_b;
++
++      int i;
++
++      interlacing_shift = readbits(alac, 8);
++      interlacing_leftweight = readbits(alac, 8);
++
++      /******** channel 1 ***********/
++      prediction_type_a = readbits(alac, 4);
++      prediction_quantitization_a = readbits(alac, 4);
++
++      ricemodifier_a = readbits(alac, 3);
++      predictor_coef_num_a = readbits(alac, 5);
++
++      /* read the predictor table */
++      for (i = 0; i < predictor_coef_num_a; i++) {
++        predictor_coef_table_a[i] = (int16_t)readbits(alac, 16);
++      }
++
++      /******** channel 2 *********/
++      prediction_type_b = readbits(alac, 4);
++      prediction_quantitization_b = readbits(alac, 4);
++
++      ricemodifier_b = readbits(alac, 3);
++      predictor_coef_num_b = readbits(alac, 5);
++
++      /* read the predictor table */
++      for (i = 0; i < predictor_coef_num_b; i++) {
++        predictor_coef_table_b[i] = (int16_t)readbits(alac, 16);
++      }
++
++      /*********************/
++      if (uncompressed_bytes) { /* see mono case */
++        int li;
++        for (li = 0; li < outputsamples; li++) {
++          alac->uncompressed_bytes_buffer_a[li] = readbits(alac, uncompressed_bytes * 8);
++          alac->uncompressed_bytes_buffer_b[li] = readbits(alac, uncompressed_bytes * 8);
++        }
++      }
++
++      /* channel 1 */
++      entropy_rice_decode(alac, alac->predicterror_buffer_a, outputsamples, readsamplesize,
++                          alac->setinfo_rice_initialhistory, alac->setinfo_rice_kmodifier,
++                          ricemodifier_a * alac->setinfo_rice_historymult / 4,
++                          (1 << alac->setinfo_rice_kmodifier) - 1);
++
++      if (prediction_type_a == 0) { /* adaptive fir */
++        predictor_decompress_fir_adapt(alac->predicterror_buffer_a, alac->outputsamples_buffer_a,
++                                       outputsamples, readsamplesize, predictor_coef_table_a,
++                                       predictor_coef_num_a, prediction_quantitization_a);
++      } else { /* see mono case */
++        fprintf(stderr, "FIXME: unhandled prediction type on channel 1: %i\n", prediction_type_a);
++      }
++
++      /* channel 2 */
++      entropy_rice_decode(alac, alac->predicterror_buffer_b, outputsamples, readsamplesize,
++                          alac->setinfo_rice_initialhistory, alac->setinfo_rice_kmodifier,
++                          ricemodifier_b * alac->setinfo_rice_historymult / 4,
++                          (1 << alac->setinfo_rice_kmodifier) - 1);
++
++      if (prediction_type_b == 0) { /* adaptive fir */
++        predictor_decompress_fir_adapt(alac->predicterror_buffer_b, alac->outputsamples_buffer_b,
++                                       outputsamples, readsamplesize, predictor_coef_table_b,
++                                       predictor_coef_num_b, prediction_quantitization_b);
++      } else {
++        fprintf(stderr, "FIXME: unhandled prediction type on channel 2: %i\n", prediction_type_b);
++      }
++    } else { /* not compressed, easy case */
++      if (alac->setinfo_sample_size <= 16) {
++        int i;
++        for (i = 0; i < outputsamples; i++) {
++          int32_t audiobits_a, audiobits_b;
++
++          audiobits_a = readbits(alac, alac->setinfo_sample_size);
++          audiobits_b = readbits(alac, alac->setinfo_sample_size);
++
++          audiobits_a = SIGN_EXTENDED32(audiobits_a, alac->setinfo_sample_size);
++          audiobits_b = SIGN_EXTENDED32(audiobits_b, alac->setinfo_sample_size);
++
++          alac->outputsamples_buffer_a[i] = audiobits_a;
++          alac->outputsamples_buffer_b[i] = audiobits_b;
++        }
++      } else {
++        int i;
++        for (i = 0; i < outputsamples; i++) {
++          int32_t audiobits_a, audiobits_b;
++
++          audiobits_a = readbits(alac, 16);
++          audiobits_a = audiobits_a << (alac->setinfo_sample_size - 16);
++          audiobits_a |= readbits(alac, alac->setinfo_sample_size - 16);
++          audiobits_a = SignExtend24(audiobits_a);
++
++          audiobits_b = readbits(alac, 16);
++          audiobits_b = audiobits_b << (alac->setinfo_sample_size - 16);
++          audiobits_b |= readbits(alac, alac->setinfo_sample_size - 16);
++          audiobits_b = SignExtend24(audiobits_b);
++
++          alac->outputsamples_buffer_a[i] = audiobits_a;
++          alac->outputsamples_buffer_b[i] = audiobits_b;
++        }
++      }
++      uncompressed_bytes = 0; // always 0 for uncompressed
++      interlacing_shift = 0;
++      interlacing_leftweight = 0;
++    }
++
++    switch (alac->setinfo_sample_size) {
++    case 16: {
++      deinterlace_16(alac->outputsamples_buffer_a, alac->outputsamples_buffer_b,
++                     (int16_t *)outbuffer, alac->numchannels, outputsamples, interlacing_shift,
++                     interlacing_leftweight);
++      break;
++    }
++    case 24: {
++      deinterlace_24(alac->outputsamples_buffer_a, alac->outputsamples_buffer_b, uncompressed_bytes,
++                     alac->uncompressed_bytes_buffer_a, alac->uncompressed_bytes_buffer_b,
++                     (int16_t *)outbuffer, alac->numchannels, outputsamples, interlacing_shift,
++                     interlacing_leftweight);
++      break;
++    }
++    case 20:
++    case 32:
++      fprintf(stderr, "FIXME: unimplemented sample size %i\n", alac->setinfo_sample_size);
++      break;
++    default:
++      break;
++    }
++
++    break;
++  }
++  }
++}
++
++alac_file *alac_create(int samplesize, int numchannels) {
++  alac_file *newfile = malloc(sizeof(alac_file));
++  if (newfile) {
++    memset(newfile, 0, sizeof(alac_file));
++    newfile->samplesize = samplesize;
++    newfile->numchannels = numchannels;
++    newfile->bytespersample = (samplesize / 8) * numchannels;
++  } else {
++    fprintf(stderr, "FIXME: can not allocate memory for a new file in alac_cxreate.");
++  }
++  return newfile;
++}
+diff --git a/android/alac/alac.h b/android/alac/alac.h
+new file mode 100644
+index 0000000..51db2c6
+--- /dev/null
++++ b/android/alac/alac.h
+@@ -0,0 +1,77 @@
++/*
++ * ALAC (Apple Lossless Audio Codec) decoder
++ * Copyright (c) 2005 David Hammerton
++ * All rights reserved.
++ *
++ * http://crazney.net/programs/itunes/alac.html
++ *
++ * Permission is hereby granted, free of charge, to any person
++ * obtaining a copy of this software and associated documentation
++ * files (the "Software"), to deal in the Software without
++ * restriction, including without limitation the rights to use,
++ * copy, modify, merge, publish, distribute, sublicense, and/or
++ * sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be
++ * included in all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
++ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
++ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
++ * OTHER DEALINGS IN THE SOFTWARE.
++ *
++ */
++
++#ifndef __ALAC__DECOMP_H
++#define __ALAC__DECOMP_H
++
++#include <stdint.h>
++
++typedef struct alac_file alac_file;
++
++alac_file *alac_create(int samplesize, int numchannels);
++void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer, int *outputsize);
++void alac_set_info(alac_file *alac, char *inputbuffer);
++void alac_allocate_buffers(alac_file *alac);
++void alac_free(alac_file *alac);
++
++struct alac_file {
++  unsigned char *input_buffer;
++  int input_buffer_bitaccumulator; /* used so we can do arbitrary
++                                      bit reads */
++
++  int samplesize;
++  int numchannels;
++  int bytespersample;
++
++  /* buffers */
++  int32_t *predicterror_buffer_a;
++  int32_t *predicterror_buffer_b;
++
++  int32_t *outputsamples_buffer_a;
++  int32_t *outputsamples_buffer_b;
++
++  int32_t *uncompressed_bytes_buffer_a;
++  int32_t *uncompressed_bytes_buffer_b;
++
++  /* stuff from setinfo */
++  uint32_t setinfo_max_samples_per_frame; /* 0x1000 = 4096 */ /* max samples per frame? */
++  uint8_t setinfo_7a;                                         /* 0x00 */
++  uint8_t setinfo_sample_size;                                /* 0x10 */
++  uint8_t setinfo_rice_historymult;                           /* 0x28 */
++  uint8_t setinfo_rice_initialhistory;                        /* 0x0a */
++  uint8_t setinfo_rice_kmodifier;                             /* 0x0e */
++  uint8_t setinfo_7f;                                         /* 0x02 */
++  uint16_t setinfo_80;                                        /* 0x00ff */
++  uint32_t setinfo_82; /* 0x000020e7 */                       /* max sample size?? */
++  uint32_t setinfo_86; /* 0x00069fe4 */                       /* bit rate (avarge)?? */
++  uint32_t setinfo_8a_rate;                                   /* 0x0000ac44 */
++  /* end setinfo stuff */
++};
++
++#endif /* __ALAC__DECOMP_H */
+diff --git a/android/dns_sd_android.c b/android/dns_sd_android.c
+new file mode 100644
+index 0000000..b48e92d
+--- /dev/null
++++ b/android/dns_sd_android.c
+@@ -0,0 +1,131 @@
++/*
++ * dns_sd for UxPlay on Android: TXT records built here, registration handed to
++ * the platform's NsdManager through hooks set by the JNI layer.
++ *
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++#include <arpa/inet.h>
++#include <pthread.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "dns_sd.h"
++
++struct _DNSServiceRef_t {
++    int id;
++};
++
++static pthread_mutex_t hook_lock = PTHREAD_MUTEX_INITIALIZER;
++static uxplay_dnssd_register_fn register_hook;
++static uxplay_dnssd_unregister_fn unregister_hook;
++
++void uxplay_dnssd_set_hooks(uxplay_dnssd_register_fn reg, uxplay_dnssd_unregister_fn unreg) {
++    pthread_mutex_lock(&hook_lock);
++    register_hook = reg;
++    unregister_hook = unreg;
++    pthread_mutex_unlock(&hook_lock);
++}
++
++DNSServiceErrorType DNSServiceRegister(DNSServiceRef *sdRef, DNSServiceFlags flags,
++                                       uint32_t interfaceIndex, const char *name,
++                                       const char *regtype, const char *domain, const char *host,
++                                       uint16_t port, uint16_t txtLen, const void *txtRecord,
++                                       DNSServiceRegisterReply callBack, void *context) {
++    (void)flags; (void)interfaceIndex; (void)domain; (void)host; (void)callBack; (void)context;
++    if (sdRef == NULL || name == NULL || regtype == NULL)
++        return kDNSServiceErr_BadParam;
++    pthread_mutex_lock(&hook_lock);
++    uxplay_dnssd_register_fn reg = register_hook;
++    pthread_mutex_unlock(&hook_lock);
++    if (reg == NULL)
++        return kDNSServiceErr_ServiceNotRunning;
++    /* dns_sd takes the port in network byte order. */
++    int id = reg(name, regtype, ntohs(port), txtRecord, txtLen);
++    if (id <= 0)
++        return id < 0 ? id : kDNSServiceErr_Unknown;
++    struct _DNSServiceRef_t *ref = malloc(sizeof(*ref));
++    if (ref == NULL)
++        return kDNSServiceErr_NoMemory;
++    ref->id = id;
++    *sdRef = ref;
++    return kDNSServiceErr_NoError;
++}
++
++void DNSServiceRefDeallocate(DNSServiceRef sdRef) {
++    if (sdRef == NULL)
++        return;
++    pthread_mutex_lock(&hook_lock);
++    uxplay_dnssd_unregister_fn unreg = unregister_hook;
++    pthread_mutex_unlock(&hook_lock);
++    if (unreg != NULL)
++        unreg(sdRef->id);
++    free(sdRef);
++}
++
++/* TXT rdata: a run of length-prefixed strings, "key=value" or bare "key". */
++
++void TXTRecordCreate(TXTRecordRef *txt, uint16_t bufferLen, void *buffer) {
++    txt->buf = buffer;
++    txt->len = 0;
++    txt->cap = buffer ? bufferLen : 0;
++    txt->owned = buffer == NULL;
++}
++
++void TXTRecordDeallocate(TXTRecordRef *txt) {
++    if (txt->owned)
++        free(txt->buf);
++    txt->buf = NULL;
++    txt->len = txt->cap = 0;
++}
++
++static void remove_key(TXTRecordRef *txt, const char *key) {
++    size_t klen = strlen(key);
++    uint16_t off = 0;
++    while (off < txt->len) {
++        uint8_t n = txt->buf[off];
++        const uint8_t *s = txt->buf + off + 1;
++        if (n >= klen && memcmp(s, key, klen) == 0 && (n == klen || s[klen] == '=')) {
++            memmove(txt->buf + off, txt->buf + off + 1 + n, txt->len - off - 1 - n);
++            txt->len -= 1 + n;
++            return;
++        }
++        off += 1 + n;
++    }
++}
++
++DNSServiceErrorType TXTRecordSetValue(TXTRecordRef *txt, const char *key, uint8_t valueSize,
++                                      const void *value) {
++    size_t klen = strlen(key);
++    size_t entry = klen + (value ? 1 + valueSize : 0);
++    if (klen == 0 || entry > 255)
++        return kDNSServiceErr_BadParam;
++    remove_key(txt, key);
++    if ((size_t)txt->len + 1 + entry > txt->cap) {
++        if (!txt->owned)
++            return kDNSServiceErr_NoMemory;
++        size_t cap = (txt->len + 1 + entry) * 2;
++        if (cap > 65535)
++            cap = 65535;
++        if ((size_t)txt->len + 1 + entry > cap)
++            return kDNSServiceErr_NoMemory;
++        uint8_t *grown = realloc(txt->buf, cap);
++        if (grown == NULL)
++            return kDNSServiceErr_NoMemory;
++        txt->buf = grown;
++        txt->cap = (uint16_t)cap;
++    }
++    uint8_t *p = txt->buf + txt->len;
++    *p++ = (uint8_t)entry;
++    memcpy(p, key, klen);
++    p += klen;
++    if (value) {
++        *p++ = '=';
++        memcpy(p, value, valueSize);
++    }
++    txt->len += 1 + entry;
++    return kDNSServiceErr_NoError;
++}
++
++uint16_t TXTRecordGetLength(const TXTRecordRef *txt) { return txt->len; }
++
++const void *TXTRecordGetBytesPtr(const TXTRecordRef *txt) { return txt->buf; }
+diff --git a/android/include/dns_sd.h b/android/include/dns_sd.h
+new file mode 100644
+index 0000000..42e022e
+--- /dev/null
++++ b/android/include/dns_sd.h
+@@ -0,0 +1,67 @@
++/*
++ * The slice of Apple's dns_sd API that UxPlay's dnssd.c uses, for Android.
++ *
++ * Android has no libdns_sd for an app to link. Advertising is done by the
++ * platform's NsdManager instead, reached through hooks the JNI layer installs
++ * (see dns_sd_android.c); this header only has to give dnssd.c the types and
++ * functions it expects. TXTRecordRef is ours rather than Apple's opaque union,
++ * since every function that touches it is implemented here too.
++ *
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++#ifndef UXPLAY_ANDROID_DNS_SD_H
++#define UXPLAY_ANDROID_DNS_SD_H
++
++#include <stdint.h>
++
++#define DNSSD_STDCALL
++
++typedef struct _DNSServiceRef_t *DNSServiceRef;
++typedef uint32_t DNSServiceFlags;
++typedef int32_t DNSServiceErrorType;
++
++enum {
++    kDNSServiceErr_NoError = 0,
++    kDNSServiceErr_Unknown = -65537,
++    kDNSServiceErr_NoMemory = -65539,
++    kDNSServiceErr_BadParam = -65540,
++    kDNSServiceErr_ServiceNotRunning = -65563,
++};
++
++typedef void (DNSSD_STDCALL *DNSServiceRegisterReply)(DNSServiceRef sdRef, DNSServiceFlags flags,
++                                                      DNSServiceErrorType errorCode,
++                                                      const char *name, const char *regtype,
++                                                      const char *domain, void *context);
++
++typedef struct {
++    uint8_t *buf;
++    uint16_t len;
++    uint16_t cap;
++    int owned;
++} TXTRecordRef;
++
++DNSServiceErrorType DNSServiceRegister(DNSServiceRef *sdRef, DNSServiceFlags flags,
++                                       uint32_t interfaceIndex, const char *name,
++                                       const char *regtype, const char *domain, const char *host,
++                                       uint16_t port, uint16_t txtLen, const void *txtRecord,
++                                       DNSServiceRegisterReply callBack, void *context);
++void DNSServiceRefDeallocate(DNSServiceRef sdRef);
++
++void TXTRecordCreate(TXTRecordRef *txtRecord, uint16_t bufferLen, void *buffer);
++void TXTRecordDeallocate(TXTRecordRef *txtRecord);
++DNSServiceErrorType TXTRecordSetValue(TXTRecordRef *txtRecord, const char *key, uint8_t valueSize,
++                                      const void *value);
++uint16_t TXTRecordGetLength(const TXTRecordRef *txtRecord);
++const void *TXTRecordGetBytesPtr(const TXTRecordRef *txtRecord);
++
++/*
++ * Installed by the JNI layer. register returns a positive id for the
++ * registration, or a negative dns_sd error; port is in host byte order and txt
++ * is the raw TXT rdata (length-prefixed "key=value" strings).
++ */
++typedef int (*uxplay_dnssd_register_fn)(const char *name, const char *regtype, uint16_t port,
++                                        const uint8_t *txt, uint16_t txt_len);
++typedef void (*uxplay_dnssd_unregister_fn)(int id);
++void uxplay_dnssd_set_hooks(uxplay_dnssd_register_fn reg, uxplay_dnssd_unregister_fn unreg);
++
++#endif
+diff --git a/android/uxplay_jni.c b/android/uxplay_jni.c
+new file mode 100644
+index 0000000..fd51cfa
+--- /dev/null
++++ b/android/uxplay_jni.c
+@@ -0,0 +1,631 @@
++/*
++ * UxPlay hosted in an Android app: JNI bridge between UxPlay's protocol
++ * library (lib/) and org.lineageos.tv.airplay.UxPlay.
++ *
++ * lib/ does the AirPlay work -- pairing, FairPlay, decryption, NTP timing --
++ * and hands over finished frames: Annex-B H.264/H.265 for video, ALAC or
++ * AAC-ELD for audio, each with a presentation time in the local clock. This
++ * file turns those into Java calls. It replaces uxplay.cpp and the GStreamer
++ * renderers; the app decodes with MediaCodec and plays with AudioTrack.
++ *
++ * Two conversions happen here and nowhere else:
++ *
++ *  - Time. lib/'s local clock is CLOCK_REALTIME (raop_ntp_get_local_time).
++ *    MediaCodec's timed release and System.nanoTime() are CLOCK_MONOTONIC, so
++ *    every presentation time is shifted into that base before crossing JNI.
++ *
++ *  - ALAC. Android ships no ALAC decoder, so audio-only AirPlay (Apple Music
++ *    and the like) is decoded here, with the decoder carried over from the
++ *    shairport-sync port. AAC-ELD, which mirroring uses, goes up encoded:
++ *    Android's own AAC decoder handles it.
++ *
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++
++#include <android/log.h>
++#include <jni.h>
++#include <pthread.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <time.h>
++
++#include "alac.h"
++#include "dns_sd.h"
++#include "dnssd.h"
++#include "logger.h"
++#include "raop.h"
++#include "stream.h"
++
++#define TAG "UxPlay"
++#define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
++#define ALOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
++#define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
++
++/* Defined in lib/raop.c; not in any header. */
++extern uint64_t get_local_time(void);
++
++static JavaVM *g_vm;
++static pthread_key_t g_env_key;
++
++/* Everything below is guarded by g_lock for start/stop; the callbacks read
++   g_host only between a successful start and the matching stop. */
++static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
++static jobject g_host;
++static raop_t *g_raop;
++static dnssd_t *g_dnssd;
++
++static jmethodID m_nsd_register, m_nsd_unregister;
++static jmethodID m_conn_init, m_conn_destroy, m_conn_reset, m_client;
++static jmethodID m_video_codec, m_video_frame, m_video_state, m_video_size, m_mirror_running;
++static jmethodID m_audio_format, m_audio_pcm, m_audio_encoded, m_audio_flush, m_volume;
++static jmethodID m_metadata, m_coverart, m_progress;
++
++enum { VIDEO_PAUSE = 1, VIDEO_RESUME = 2, VIDEO_FLUSH = 3, VIDEO_RESET = 4 };
++
++/* ------------------------------------------------------------ threads -- */
++
++/* lib/ calls back on threads of its own. Each is attached once, on first
++   use, and detached by the key's destructor when the thread exits. */
++static void detach_on_exit(void *unused) {
++    (void)unused;
++    (*g_vm)->DetachCurrentThread(g_vm);
++}
++
++static JNIEnv *env_for_thread(void) {
++    JNIEnv *env = NULL;
++    if ((*g_vm)->GetEnv(g_vm, (void **)&env, JNI_VERSION_1_6) == JNI_OK)
++        return env;
++    if ((*g_vm)->AttachCurrentThread(g_vm, &env, NULL) != JNI_OK)
++        return NULL;
++    pthread_setspecific(g_env_key, env);
++    return env;
++}
++
++static bool check_exception(JNIEnv *env, const char *where) {
++    if ((*env)->ExceptionCheck(env)) {
++        ALOGE("exception in %s", where);
++        (*env)->ExceptionDescribe(env);
++        (*env)->ExceptionClear(env);
++        return true;
++    }
++    return false;
++}
++
++static jbyteArray to_bytes(JNIEnv *env, const void *data, int len) {
++    jbyteArray arr = (*env)->NewByteArray(env, len);
++    if (arr != NULL && len > 0)
++        (*env)->SetByteArrayRegion(env, arr, 0, len, (const jbyte *)data);
++    return arr;
++}
++
++/* --------------------------------------------------------------- time -- */
++
++static int64_t clock_ns(clockid_t clock) {
++    struct timespec t;
++    clock_gettime(clock, &t);
++    return (int64_t)t.tv_sec * 1000000000LL + t.tv_nsec;
++}
++
++static pthread_mutex_t g_clock_lock = PTHREAD_MUTEX_INITIALIZER;
++static uint64_t g_remote_clock_offset;
++static int g_open_connections;
++
++/* The sender's clock mapped onto ours, fixed by the first frame of a
++   connection, exactly as uxplay.cpp does. Then shifted from REALTIME to
++   MONOTONIC for Java. */
++static int64_t presentation_time_ns(uint64_t ntp_local, uint64_t ntp_remote) {
++    pthread_mutex_lock(&g_clock_lock);
++    if (g_remote_clock_offset == 0) {
++        uint64_t local = ntp_local ? ntp_local : get_local_time();
++        g_remote_clock_offset = local - ntp_remote;
++    }
++    uint64_t local_pts = ntp_remote + g_remote_clock_offset;
++    pthread_mutex_unlock(&g_clock_lock);
++    return (int64_t)local_pts - clock_ns(CLOCK_REALTIME) + clock_ns(CLOCK_MONOTONIC);
++}
++
++/* ---------------------------------------------------------------- mDNS -- */
++
++static int nsd_register(const char *name, const char *regtype, uint16_t port, const uint8_t *txt,
++                        uint16_t txt_len) {
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return kDNSServiceErr_ServiceNotRunning;
++    jstring jname = (*env)->NewStringUTF(env, name);
++    jstring jtype = (*env)->NewStringUTF(env, regtype);
++    jbyteArray jtxt = to_bytes(env, txt, txt_len);
++    jint id = (*env)->CallIntMethod(env, g_host, m_nsd_register, jname, jtype, (jint)port, jtxt);
++    (*env)->DeleteLocalRef(env, jname);
++    (*env)->DeleteLocalRef(env, jtype);
++    (*env)->DeleteLocalRef(env, jtxt);
++    if (check_exception(env, "nsdRegister"))
++        return kDNSServiceErr_Unknown;
++    return id;
++}
++
++static void nsd_unregister(int id) {
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_nsd_unregister, (jint)id);
++    check_exception(env, "nsdUnregister");
++}
++
++/* --------------------------------------------------------- callbacks -- */
++
++static void call_void(jmethodID m, const char *where) {
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m);
++    check_exception(env, where);
++}
++
++static void cb_conn_init(void *cls) {
++    (void)cls;
++    pthread_mutex_lock(&g_clock_lock);
++    g_open_connections++;
++    pthread_mutex_unlock(&g_clock_lock);
++    call_void(m_conn_init, "onConnInit");
++}
++
++static void cb_conn_destroy(void *cls) {
++    (void)cls;
++    pthread_mutex_lock(&g_clock_lock);
++    if (--g_open_connections <= 0) {
++        g_open_connections = 0;
++        g_remote_clock_offset = 0; /* the next sender brings its own clock */
++    }
++    pthread_mutex_unlock(&g_clock_lock);
++    call_void(m_conn_destroy, "onConnDestroy");
++}
++
++static void cb_conn_reset(void *cls, int reason) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_conn_reset, (jint)reason);
++    check_exception(env, "onConnReset");
++}
++
++static void cb_conn_feedback(void *cls) { (void)cls; }
++
++static void cb_report_client_request(void *cls, char *deviceid, char *model, char *name,
++                                     bool *admit) {
++    (void)cls;
++    *admit = true; /* no access control yet; see pin_pw in uxplay.cpp */
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    jstring jname = (*env)->NewStringUTF(env, name ? name : "");
++    jstring jmodel = (*env)->NewStringUTF(env, model ? model : "");
++    jstring jid = (*env)->NewStringUTF(env, deviceid ? deviceid : "");
++    (*env)->CallVoidMethod(env, g_host, m_client, jname, jmodel, jid);
++    (*env)->DeleteLocalRef(env, jname);
++    (*env)->DeleteLocalRef(env, jmodel);
++    (*env)->DeleteLocalRef(env, jid);
++    check_exception(env, "onClient");
++}
++
++static void cb_export_dacp(void *cls, const char *active_remote, const char *dacp_id) {
++    (void)cls; (void)active_remote; (void)dacp_id;
++}
++
++static void cb_audio_remote_control_id(void *cls, const char *dacp_id,
++                                       const char *active_remote_header) {
++    (void)cls; (void)dacp_id; (void)active_remote_header;
++}
++
++/* ----- video */
++
++static int cb_video_set_codec(void *cls, video_codec_t codec) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return -1;
++    (*env)->CallVoidMethod(env, g_host, m_video_codec, (jboolean)(codec == VIDEO_CODEC_H265));
++    check_exception(env, "onVideoCodec");
++    return 0;
++}
++
++static void cb_video_process(void *cls, raop_ntp_t *ntp, video_decode_struct *data) {
++    (void)cls; (void)ntp;
++    /* lib/ marks a frame it could not decrypt by setting its first byte to 1;
++       a good one starts with an Annex-B start code. */
++    if (data->data_len <= 4 || data->data[0] != 0)
++        return;
++    int64_t pts = presentation_time_ns(data->ntp_time_local, data->ntp_time_remote);
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    jbyteArray frame = to_bytes(env, data->data, data->data_len);
++    (*env)->CallVoidMethod(env, g_host, m_video_frame, frame, (jlong)pts,
++                           (jboolean)data->is_h265);
++    (*env)->DeleteLocalRef(env, frame);
++    check_exception(env, "onVideoFrame");
++}
++
++static void video_state(int what, const char *where) {
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_video_state, (jint)what);
++    check_exception(env, where);
++}
++
++static void cb_video_pause(void *cls) { (void)cls; video_state(VIDEO_PAUSE, "video_pause"); }
++static void cb_video_resume(void *cls) { (void)cls; video_state(VIDEO_RESUME, "video_resume"); }
++static void cb_video_flush(void *cls) { (void)cls; video_state(VIDEO_FLUSH, "video_flush"); }
++static void cb_video_reset(void *cls, reset_type_t type) {
++    (void)cls; (void)type;
++    video_state(VIDEO_RESET, "video_reset");
++}
++
++static void cb_video_report_size(void *cls, float *width_source, float *height_source,
++                                 float *width, float *height) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_video_size, (jint)*width_source, (jint)*height_source,
++                           (jint)*width, (jint)*height);
++    check_exception(env, "onVideoSize");
++}
++
++static void cb_mirror_video_running(void *cls, bool running) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_mirror_running, (jboolean)running);
++    check_exception(env, "onMirrorRunning");
++}
++
++/* ----- audio */
++
++static pthread_mutex_t g_alac_lock = PTHREAD_MUTEX_INITIALIZER;
++static alac_file *g_alac;
++static int g_alac_spf = 352;
++
++/* The ALAC stream parameters AirPlay always uses: its fmtp line is
++   "96 352 0 16 40 10 14 2 255 0 0 44100", which is also what uxplay.cpp's
++   magic cookie encodes. */
++static void alac_reset(int spf) {
++    pthread_mutex_lock(&g_alac_lock);
++    if (g_alac != NULL)
++        alac_free(g_alac);
++    g_alac = alac_create(16, 2);
++    if (g_alac != NULL) {
++        g_alac_spf = spf > 0 ? spf : 352;
++        g_alac->setinfo_max_samples_per_frame = g_alac_spf;
++        g_alac->setinfo_7a = 0;
++        g_alac->setinfo_sample_size = 16;
++        g_alac->setinfo_rice_historymult = 40;
++        g_alac->setinfo_rice_initialhistory = 10;
++        g_alac->setinfo_rice_kmodifier = 14;
++        g_alac->setinfo_7f = 2;
++        g_alac->setinfo_80 = 255;
++        g_alac->setinfo_82 = 0;
++        g_alac->setinfo_86 = 0;
++        g_alac->setinfo_8a_rate = 44100;
++        alac_allocate_buffers(g_alac);
++    }
++    pthread_mutex_unlock(&g_alac_lock);
++}
++
++static void cb_audio_get_format(void *cls, unsigned char *ct, unsigned short *spf,
++                                bool *using_screen, bool *is_media, uint64_t *audio_format) {
++    (void)cls; (void)audio_format;
++    ALOGI("audio format: ct=%d spf=%d usingScreen=%d isMedia=%d", *ct, *spf, *using_screen,
++          *is_media);
++    if (*ct == 2)
++        alac_reset(*spf);
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_audio_format, (jint)*ct, (jint)*spf,
++                           (jboolean)*using_screen, (jboolean)*is_media);
++    check_exception(env, "onAudioFormat");
++}
++
++static void cb_audio_process(void *cls, raop_ntp_t *ntp, audio_decode_struct *data) {
++    (void)cls; (void)ntp;
++    if (data->data_len <= 0)
++        return;
++    int64_t pts = presentation_time_ns(data->ntp_time_local, data->ntp_time_remote);
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++
++    if (data->ct == 2) {
++        /* ALAC -> interleaved 16-bit stereo, host order, which is what
++           AudioTrack's ENCODING_PCM_16BIT wants. */
++        int16_t pcm[4096 * 2];
++        int out_bytes = sizeof(pcm);
++        pthread_mutex_lock(&g_alac_lock);
++        if (g_alac == NULL) {
++            pthread_mutex_unlock(&g_alac_lock);
++            return;
++        }
++        alac_decode_frame(g_alac, data->data, pcm, &out_bytes);
++        pthread_mutex_unlock(&g_alac_lock);
++        if (out_bytes <= 0)
++            return;
++        jbyteArray arr = to_bytes(env, pcm, out_bytes);
++        (*env)->CallVoidMethod(env, g_host, m_audio_pcm, arr, (jlong)pts);
++        (*env)->DeleteLocalRef(env, arr);
++        check_exception(env, "onAudioPcm");
++    } else {
++        jbyteArray arr = to_bytes(env, data->data, data->data_len);
++        (*env)->CallVoidMethod(env, g_host, m_audio_encoded, arr, (jlong)pts, (jint)data->ct);
++        (*env)->DeleteLocalRef(env, arr);
++        check_exception(env, "onAudioEncoded");
++    }
++}
++
++static void cb_audio_flush(void *cls) { (void)cls; call_void(m_audio_flush, "onAudioFlush"); }
++
++static double cb_audio_set_client_volume(void *cls) {
++    (void)cls;
++    return 0.0; /* full: the television's own volume is the real control */
++}
++
++static void cb_audio_set_volume(void *cls, float volume) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_volume, (jfloat)volume);
++    check_exception(env, "onVolume");
++}
++
++static void bytes_callback(jmethodID m, const void *buffer, int len, const char *where) {
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    jbyteArray arr = buffer ? to_bytes(env, buffer, len) : NULL;
++    (*env)->CallVoidMethod(env, g_host, m, arr);
++    if (arr)
++        (*env)->DeleteLocalRef(env, arr);
++    check_exception(env, where);
++}
++
++static void cb_audio_set_metadata(void *cls, const void *buffer, int len) {
++    (void)cls;
++    bytes_callback(m_metadata, buffer, len, "onMetadata");
++}
++
++static void cb_audio_set_coverart(void *cls, const void *buffer, int len) {
++    (void)cls;
++    bytes_callback(m_coverart, buffer, len, "onCoverArt");
++}
++
++static void cb_audio_set_progress(void *cls, uint32_t *start, uint32_t *curr, uint32_t *end) {
++    (void)cls;
++    JNIEnv *env = env_for_thread();
++    if (env == NULL || g_host == NULL)
++        return;
++    (*env)->CallVoidMethod(env, g_host, m_progress, (jlong)*start, (jlong)*curr, (jlong)*end);
++    check_exception(env, "onProgress");
++}
++
++/* ----- logging */
++
++static void log_callback(void *cls, int level, const char *msg) {
++    (void)cls;
++    int prio = level <= LOGGER_ERR       ? ANDROID_LOG_ERROR
++               : level == LOGGER_WARNING ? ANDROID_LOG_WARN
++               : level <= LOGGER_INFO    ? ANDROID_LOG_INFO
++                                         : ANDROID_LOG_DEBUG;
++    __android_log_write(prio, TAG, msg);
++}
++
++/* ------------------------------------------------------------- start -- */
++
++static int parse_mac(const char *s, char out[6]) {
++    unsigned int b[6];
++    if (sscanf(s, "%x:%x:%x:%x:%x:%x", &b[0], &b[1], &b[2], &b[3], &b[4], &b[5]) != 6)
++        return -1;
++    for (int i = 0; i < 6; i++)
++        out[i] = (char)b[i];
++    return 0;
++}
++
++/* uxplay.cpp's start_dnssd feature set, bits 0-31. Bits 32 and up stay at
++   the defaults, as they do there. */
++static void set_features(dnssd_t *d) {
++    static const signed char bits[32] = {
++        0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
++        1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0,
++    };
++    for (int i = 0; i < 32; i++)
++        dnssd_set_airplay_features(d, i, bits[i]);
++}
++
++static bool cache_methods(JNIEnv *env, jobject host) {
++    jclass c = (*env)->GetObjectClass(env, host);
++#define M(var, name, sig)                                  \
++    if (!(var = (*env)->GetMethodID(env, c, name, sig))) { \
++        ALOGE("missing method %s%s", name, sig);           \
++        return false;                                      \
++    }
++    M(m_nsd_register, "nsdRegister", "(Ljava/lang/String;Ljava/lang/String;I[B)I");
++    M(m_nsd_unregister, "nsdUnregister", "(I)V");
++    M(m_conn_init, "onConnInit", "()V");
++    M(m_conn_destroy, "onConnDestroy", "()V");
++    M(m_conn_reset, "onConnReset", "(I)V");
++    M(m_client, "onClient", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
++    M(m_video_codec, "onVideoCodec", "(Z)V");
++    M(m_video_frame, "onVideoFrame", "([BJZ)V");
++    M(m_video_state, "onVideoState", "(I)V");
++    M(m_video_size, "onVideoSize", "(IIII)V");
++    M(m_mirror_running, "onMirrorRunning", "(Z)V");
++    M(m_audio_format, "onAudioFormat", "(IIZZ)V");
++    M(m_audio_pcm, "onAudioPcm", "([BJ)V");
++    M(m_audio_encoded, "onAudioEncoded", "([BJI)V");
++    M(m_audio_flush, "onAudioFlush", "()V");
++    M(m_volume, "onVolume", "(F)V");
++    M(m_metadata, "onMetadata", "([B)V");
++    M(m_coverart, "onCoverArt", "([B)V");
++    M(m_progress, "onProgress", "(JJJ)V");
++#undef M
++    (*env)->DeleteLocalRef(env, c);
++    return true;
++}
++
++static void stop_locked(void) {
++    if (g_dnssd != NULL) {
++        dnssd_unregister_raop(g_dnssd);
++        dnssd_unregister_airplay(g_dnssd);
++    }
++    if (g_raop != NULL) {
++        raop_destroy(g_raop); /* stops the server and its threads */
++        g_raop = NULL;
++    }
++    if (g_dnssd != NULL) {
++        dnssd_destroy(g_dnssd);
++        g_dnssd = NULL;
++    }
++    pthread_mutex_lock(&g_alac_lock);
++    if (g_alac != NULL) {
++        alac_free(g_alac);
++        g_alac = NULL;
++    }
++    pthread_mutex_unlock(&g_alac_lock);
++    pthread_mutex_lock(&g_clock_lock);
++    g_remote_clock_offset = 0;
++    g_open_connections = 0;
++    pthread_mutex_unlock(&g_clock_lock);
++}
++
++JNIEXPORT jint JNICALL Java_org_lineageos_tv_airplay_UxPlay_nativeStart(
++        JNIEnv *env, jobject thiz, jstring jname, jstring jmac, jstring jkeyfile, jint width,
++        jint height, jint refresh, jint max_fps) {
++    pthread_mutex_lock(&g_lock);
++    if (g_raop != NULL) {
++        pthread_mutex_unlock(&g_lock);
++        return raop_get_port(g_raop);
++    }
++    if (!cache_methods(env, thiz)) {
++        pthread_mutex_unlock(&g_lock);
++        return -1;
++    }
++    g_host = (*env)->NewGlobalRef(env, thiz);
++    uxplay_dnssd_set_hooks(nsd_register, nsd_unregister);
++
++    const char *name = (*env)->GetStringUTFChars(env, jname, NULL);
++    const char *mac = (*env)->GetStringUTFChars(env, jmac, NULL);
++    const char *keyfile = (*env)->GetStringUTFChars(env, jkeyfile, NULL);
++    int result = -1;
++
++    char hw[6];
++    if (parse_mac(mac, hw) != 0) {
++        ALOGE("bad device id %s", mac);
++        goto out;
++    }
++
++    int err = 0;
++    g_dnssd = dnssd_init(name, strlen(name), hw, sizeof(hw), &err, 0 /* no pin */);
++    if (err || g_dnssd == NULL) {
++        ALOGE("dnssd_init failed: %d", err);
++        goto fail;
++    }
++    set_features(g_dnssd);
++
++    raop_callbacks_t cbs;
++    memset(&cbs, 0, sizeof(cbs));
++    cbs.conn_init = cb_conn_init;
++    cbs.conn_destroy = cb_conn_destroy;
++    cbs.conn_reset = cb_conn_reset;
++    cbs.conn_feedback = cb_conn_feedback;
++    cbs.audio_process = cb_audio_process;
++    cbs.video_process = cb_video_process;
++    cbs.audio_flush = cb_audio_flush;
++    cbs.video_flush = cb_video_flush;
++    cbs.video_pause = cb_video_pause;
++    cbs.video_resume = cb_video_resume;
++    cbs.video_reset = cb_video_reset;
++    cbs.audio_set_client_volume = cb_audio_set_client_volume;
++    cbs.audio_set_volume = cb_audio_set_volume;
++    cbs.audio_get_format = cb_audio_get_format;
++    cbs.video_report_size = cb_video_report_size;
++    cbs.audio_set_metadata = cb_audio_set_metadata;
++    cbs.audio_set_coverart = cb_audio_set_coverart;
++    cbs.audio_set_progress = cb_audio_set_progress;
++    cbs.audio_remote_control_id = cb_audio_remote_control_id;
++    cbs.report_client_request = cb_report_client_request;
++    cbs.export_dacp = cb_export_dacp;
++    cbs.video_set_codec = cb_video_set_codec;
++    cbs.mirror_video_running = cb_mirror_video_running;
++
++    g_raop = raop_init(&cbs);
++    if (g_raop == NULL) {
++        ALOGE("raop_init failed");
++        goto fail;
++    }
++    raop_set_log_callback(g_raop, log_callback, NULL);
++    raop_set_log_level(g_raop, LOGGER_INFO);
++    /* nohold: a new sender may take over from a connected one, which is what
++       a shared television wants. */
++    if (raop_init2(g_raop, 1, mac, keyfile)) {
++        ALOGE("raop_init2 failed");
++        goto fail;
++    }
++    if (width > 0) raop_set_plist(g_raop, "width", width);
++    if (height > 0) raop_set_plist(g_raop, "height", height);
++    if (refresh > 0) raop_set_plist(g_raop, "refreshRate", refresh);
++    if (max_fps > 0) raop_set_plist(g_raop, "maxFPS", max_fps);
++
++    unsigned short tcp[3] = {0, 0, 0}, udp[3] = {0, 0, 0}; /* 0: assigned */
++    raop_set_tcp_ports(g_raop, tcp);
++    raop_set_udp_ports(g_raop, udp);
++    unsigned short port = raop_get_port(g_raop);
++    if (raop_start_httpd(g_raop, &port) < 0) {
++        ALOGE("could not start the AirPlay server");
++        goto fail;
++    }
++    raop_set_port(g_raop, port);
++    raop_set_dnssd(g_raop, g_dnssd);
++
++    if (dnssd_register_raop(g_dnssd, port) != 0)
++        ALOGW("could not advertise _raop._tcp");
++    if (dnssd_register_airplay(g_dnssd, port) != 0)
++        ALOGW("could not advertise _airplay._tcp");
++
++    ALOGI("AirPlay server on port %u as \"%s\"", port, name);
++    result = port;
++    goto out;
++
++fail:
++    stop_locked();
++    (*env)->DeleteGlobalRef(env, g_host);
++    g_host = NULL;
++out:
++    (*env)->ReleaseStringUTFChars(env, jname, name);
++    (*env)->ReleaseStringUTFChars(env, jmac, mac);
++    (*env)->ReleaseStringUTFChars(env, jkeyfile, keyfile);
++    pthread_mutex_unlock(&g_lock);
++    return result;
++}
++
++JNIEXPORT void JNICALL Java_org_lineageos_tv_airplay_UxPlay_nativeStop(JNIEnv *env, jobject thiz) {
++    (void)thiz;
++    pthread_mutex_lock(&g_lock);
++    stop_locked();
++    if (g_host != NULL) {
++        (*env)->DeleteGlobalRef(env, g_host);
++        g_host = NULL;
++    }
++    uxplay_dnssd_set_hooks(NULL, NULL);
++    pthread_mutex_unlock(&g_lock);
++}
++
++JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
++    (void)reserved;
++    g_vm = vm;
++    pthread_key_create(&g_env_key, detach_on_exit);
++    return JNI_VERSION_1_6;
++}
+diff --git a/lib/crypto.c b/lib/crypto.c
+index 762c648..0bd995c 100644
+--- a/lib/crypto.c
++++ b/lib/crypto.c
+@@ -602,25 +602,16 @@ int get_random_bytes(unsigned char *buf, int num) {
+ }
+ #include <stdio.h>
+ void pk_to_base64(const unsigned char *pk, int pk_len, char *pk_base64, int len) {
++    /* EVP_EncodeBlock rather than a BIO_f_base64 chain: BoringSSL (Android's
++       libcrypto) declares BIO_f_base64 but does not implement it, so the BIO
++       version does not link there. EVP_EncodeBlock writes the same thing --
++       padded base64, no newlines -- plus a terminating NUL, and needs no
++       buffer that the BIO version leaked. */
+     memset(pk_base64, 0, len);
+     int len64 = (4 * (pk_len /3)) + (pk_len % 3 ? 4 : 0);
+-    
+-    assert (len > len64);
+-    
+-    BIO *b64 = BIO_new(BIO_f_base64());
+-    BIO *bio = BIO_new(BIO_s_mem());
+-    BUF_MEM *bufferPtr = NULL;
+ 
++    assert (len > len64);
+ 
+-    bio = BIO_push(b64, bio);
+-  
+-    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+-    BIO_write(bio, pk, pk_len);
+-    BIO_flush(bio);
+-
+-    BIO_get_mem_ptr(bio, &bufferPtr);
+-    BIO_set_close(bio, BIO_NOCLOSE);
+-    BIO_free_all(bio);
+-    memcpy(pk_base64,(*bufferPtr).data, len64);
++    EVP_EncodeBlock((unsigned char *) pk_base64, pk, pk_len);
+ }
+   
+-- 
+2.43.0
+

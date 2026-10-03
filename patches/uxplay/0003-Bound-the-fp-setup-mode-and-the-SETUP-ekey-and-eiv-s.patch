@@ -1,0 +1,69 @@
+From c9685af02dca4ea86a3a73cd9e55cf404617933c Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 10:14:31 -0500
+Subject: [PATCH 3/6] Bound the fp-setup mode, and the SETUP ekey and eiv sizes
+
+fairplay_setup indexed its four-entry reply table with a byte straight
+from the client's request, so a request with a mode above 3 made the
+receiver answer with up to 36 KB of whatever follows the table. It now
+refuses any mode the table does not have.
+
+The first SETUP copied 16 bytes out of the client's eiv and 72 out of
+its ekey without looking at their sizes. A shorter one is now refused
+with 400 instead of being read past.
+
+Checked on the host under AddressSanitizer: modes 0-3 are accepted and
+4-255 refused.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I4098fdc06817b717b28513e62e4d9fd9c936c6ee
+---
+ lib/fairplay_playfair.c |  5 +++++
+ lib/raop_handlers.h     | 14 ++++++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/lib/fairplay_playfair.c b/lib/fairplay_playfair.c
+index 2a72fdf..02cae19 100644
+--- a/lib/fairplay_playfair.c
++++ b/lib/fairplay_playfair.c
+@@ -55,7 +55,12 @@ fairplay_setup(fairplay_t *fp, const unsigned char req[16], unsigned char res[14
+         return -1;
+     }
+ 
++    /* The mode is the client's byte, and there are four replies: without
++       this, any client could read up to 36 KB past the table. */
+     int mode = req[14];
++    if (mode >= (int) (sizeof(reply_message) / sizeof(reply_message[0]))) {
++        return -1;
++    }
+     memcpy(res, reply_message[mode], 142);
+     fp->keymsglen = 0;
+     return 0;
+diff --git a/lib/raop_handlers.h b/lib/raop_handlers.h
+index 5037e68..1396f5c 100644
+--- a/lib/raop_handlers.h
++++ b/lib/raop_handlers.h
+@@ -630,6 +630,20 @@ raop_handler_setup(raop_conn_t *conn,
+     if (PLIST_IS_DATA(req_eiv_node) && PLIST_IS_DATA(req_ekey_node)) {
+         // The first SETUP call that initializes keys and timing
+ 
++        /* 16 and 72 bytes are copied out of these below, whatever size the
++           client sent: refuse anything else rather than read past them. */
++        uint64_t eiv_size = 0, ekey_size = 0;
++        plist_get_data_ptr(req_eiv_node, &eiv_size);
++        plist_get_data_ptr(req_ekey_node, &ekey_size);
++        if (eiv_size != 16 || ekey_size != 72) {
++            logger_log(raop->logger, LOGGER_ERR, "SETUP with a %llu-byte eiv and a %llu-byte ekey;"
++                       " expected 16 and 72", (unsigned long long) eiv_size, (unsigned long long) ekey_size);
++            http_response_init(response, "RTSP/1.0", 400, "Bad Request");
++            plist_free(res_root_node);
++            plist_free(req_root_node);
++            return;
++        }
++
+         unsigned char aesiv[16] = { 0 };
+         unsigned char aeskey[16] = { 0 };
+         unsigned char eaeskey[72] = { 0 };
+-- 
+2.43.0
+

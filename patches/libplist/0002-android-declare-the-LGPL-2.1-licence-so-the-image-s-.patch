@@ -1,0 +1,38 @@
+From eebc4ae9c3c5982fa673614692603246493e4409 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 19:34:23 -0500
+Subject: [PATCH 2/2] android: declare the LGPL-2.1 licence, so the image's
+ notices carry it
+
+Change-Id: Idd9c0798559572625628899eb812ddece5183d27
+---
+ Android.bp | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/Android.bp b/Android.bp
+index 30f3c25..a329806 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -4,6 +4,19 @@
+ //
+ // SPDX-License-Identifier: LGPL-2.1-or-later
+ 
++package {
++    default_applicable_licenses: ["external_libplist_license"],
++}
++
++// The library is LGPL-2.1-or-later; COPYING (GPL-2.0) covers the tools,
++// which are not built here.
++license {
++    name: "external_libplist_license",
++    visibility: [":__subpackages__"],
++    license_kinds: ["SPDX-license-identifier-LGPL-2.1-or-later"],
++    license_text: ["COPYING.LESSER"],
++}
++
+ cc_library_static {
+     name: "libplist-2.0",
+     vendor_available: false,
+-- 
+2.43.0
+

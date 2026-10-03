@@ -1,0 +1,274 @@
+From 5328e6847332bd57b4a7393879bf5cf5798f9630 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 09:42:03 -0500
+Subject: [PATCH 2/6] android: ALAC decoder, bounded against crafted frames
+
+The decoder trusted the stream in four places, and pairing needs no PIN,
+so anyone on the network could overrun the heap of the receiving app --
+a privileged one -- with a single audio packet:
+
+- A frame may carry its own sample count. That was checked only against
+  the caller's output buffer (16 KB here), while every work buffer is
+  sized for setinfo_max_samples_per_frame (352). Now bounded by that,
+  and zero or negative counts are refused.
+- A run of zeros in the Rice decoder is a length from the stream, up to
+  64 K samples, and was memset with no reference to the frame. Clamped
+  to what is left of it -- ffmpeg's decoder does the same.
+- An "uncompressed bytes" field wider than the sample made readsamplesize
+  negative, which walks the bit reader backwards. Refused.
+- The bit reader has no idea where its input ends. uxplay_jni.c now
+  copies each frame into a zero-padded buffer large enough that no frame
+  within the sample bound can read out of it, and asks for exactly one
+  frame of output, so the decoder's own check applies too.
+
+Also count_leading_zeros(0), which the zero-run path reaches and which
+__builtin_clz leaves undefined.
+
+android/tests/alac_check.c drives the decoder as the bridge does: a
+verbatim frame must round-trip bit-exactly, then random and
+header-mutated frames under AddressSanitizer. Before this change it
+reports a heap-buffer-overflow within seconds; after it, 250,000 frames
+run clean.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I95902151a3d503422670de7b3adf48acb19449ed
+---
+ android/alac/alac.c        | 32 ++++++++++++-
+ android/tests/alac_check.c | 92 ++++++++++++++++++++++++++++++++++++++
+ android/uxplay_jni.c       | 25 ++++++++---
+ 3 files changed, 143 insertions(+), 6 deletions(-)
+ create mode 100644 android/tests/alac_check.c
+
+diff --git a/android/alac/alac.c b/android/alac/alac.c
+index daca81c..ab57c5a 100644
+--- a/android/alac/alac.c
++++ b/android/alac/alac.c
+@@ -233,7 +233,8 @@ static int count_leading_zeros(int32_t input)
+ /* for some reason the unrolled version (below) is
+  * actually faster than this. yay intel!
+  */
+-static int count_leading_zeros(int input) { return __builtin_clz(input); }
++/* __builtin_clz(0) is undefined, and the zero-run path asks for it. */
++static int count_leading_zeros(int input) { return input ? __builtin_clz(input) : 32; }
+ #elif defined(_MSC_VER) && defined(_M_IX86)
+ static int count_leading_zeros(int input) {
+   int output = 0;
+@@ -385,6 +386,9 @@ static void entropy_rice_decode(alac_file *alac, int32_t *outputBuffer, int outp
+ 
+       // got blockSize 0s
+       if (blockSize > 0) {
++        // The run length comes from the stream; never past the frame.
++        if (blockSize > outputSize - outputCount - 1)
++          blockSize = outputSize - outputCount - 1;
+         memset(&outputBuffer[outputCount + 1], 0, blockSize * sizeof(*outputBuffer));
+         outputCount += blockSize;
+       }
+@@ -687,6 +691,13 @@ void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer
+       /* now read the number of samples,
+        * as a 32bit integer */
+       outputsamples = readbits(alac, 32);
++      /* The frame names its own length, and every work buffer is sized for
++         setinfo_max_samples_per_frame: bound it by that, not only by the
++         caller's output buffer, or one crafted frame overruns the heap. */
++      if (outputsamples <= 0 || outputsamples > alac->setinfo_max_samples_per_frame) {
++        *outputsize = 0;
++        return;
++      }
+       *outputsize = outputsamples * alac->bytespersample;
+       if (*outputsize > outbuffer_allocation_size) {
+         fprintf(stderr, "FIXME: Not enough space if the output buffer for audio frame - E2.\n");
+@@ -695,6 +706,12 @@ void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer
+       }
+     }
+ 
++    /* A sample cannot be more uncompressed bytes than it has; allowing it
++       makes readsamplesize negative and walks the bit reader backwards. */
++    if (uncompressed_bytes * 8 >= alac->setinfo_sample_size) {
++      *outputsize = 0;
++      return;
++    }
+     readsamplesize = alac->setinfo_sample_size - (uncompressed_bytes * 8);
+ 
+     if (!isnotcompressed) { /* so it is compressed */
+@@ -842,6 +859,13 @@ void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer
+       /* now read the number of samples,
+        * as a 32bit integer */
+       outputsamples = readbits(alac, 32);
++      /* The frame names its own length, and every work buffer is sized for
++         setinfo_max_samples_per_frame: bound it by that, not only by the
++         caller's output buffer, or one crafted frame overruns the heap. */
++      if (outputsamples <= 0 || outputsamples > alac->setinfo_max_samples_per_frame) {
++        *outputsize = 0;
++        return;
++      }
+       *outputsize = outputsamples * alac->bytespersample;
+       if (*outputsize > outbuffer_allocation_size) {
+         fprintf(stderr, "FIXME: Not enough space if the output buffer for audio frame - E3.\n");
+@@ -850,6 +874,12 @@ void alac_decode_frame(alac_file *alac, unsigned char *inbuffer, void *outbuffer
+       }
+     }
+ 
++    /* A sample cannot be more uncompressed bytes than it has; allowing it
++       makes readsamplesize negative and walks the bit reader backwards. */
++    if (uncompressed_bytes * 8 >= alac->setinfo_sample_size) {
++      *outputsize = 0;
++      return;
++    }
+     readsamplesize = alac->setinfo_sample_size - (uncompressed_bytes * 8) + 1;
+ 
+     if (!isnotcompressed) { /* compressed */
+diff --git a/android/tests/alac_check.c b/android/tests/alac_check.c
+new file mode 100644
+index 0000000..a3c5e26
+--- /dev/null
++++ b/android/tests/alac_check.c
+@@ -0,0 +1,92 @@
++/*
++ * Host check of the ALAC decoder, driven the way cb_audio_process in
++ * uxplay_jni.c drives it: input copied into a zero-padded buffer, output
++ * limited to one frame. It checks that a verbatim stereo frame decodes
++ * bit-exactly, then feeds random and header-mutated frames looking for
++ * memory faults. Not part of any build:
++ *
++ *   gcc -g -O1 -fsanitize=address,undefined -fno-sanitize=shift,signed-integer-overflow \
++ *       -w -Iandroid/alac android/tests/alac_check.c android/alac/alac.c -lm -o alac_check
++ *   ASAN_OPTIONS=detect_leaks=0 ./alac_check 100000
++ *
++ * The unhardened decoder faults within seconds of this; see the commit that
++ * added it. The signed-shift and overflow reports it leaves out are
++ * arithmetic on garbage input, not memory access.
++ *
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++#include <math.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include "alac.h"
++
++#define SPF 352
++static alac_file *a;
++static unsigned char in_pad[4096 * 15 + 1024];
++
++static void setup(void) {
++    a = alac_create(16, 2);
++    a->setinfo_max_samples_per_frame = SPF; a->setinfo_7a = 0; a->setinfo_sample_size = 16;
++    a->setinfo_rice_historymult = 40; a->setinfo_rice_initialhistory = 10;
++    a->setinfo_rice_kmodifier = 14; a->setinfo_7f = 2; a->setinfo_80 = 255;
++    a->setinfo_82 = 0; a->setinfo_86 = 0; a->setinfo_8a_rate = 44100;
++    alac_allocate_buffers(a);
++}
++
++static int decode(const unsigned char *data, int len, int16_t *pcm) {
++    if (len > (int)sizeof(in_pad)) return 0;
++    memcpy(in_pad, data, len);
++    memset(in_pad + len, 0, sizeof(in_pad) - len);
++    int out = SPF * 4;
++    alac_decode_frame(a, in_pad, pcm, &out);
++    return out;
++}
++
++/* bit writer */
++static unsigned char buf[8192]; static int bitpos;
++static void put(uint32_t v, int bits) {
++    for (int i = bits - 1; i >= 0; i--) {
++        if ((v >> i) & 1) buf[bitpos >> 3] |= 0x80 >> (bitpos & 7);
++        bitpos++;
++    }
++}
++
++int main(int argc, char **argv) {
++    setup();
++    static int16_t pcm[4096 * 2];
++    /* 1: a verbatim stereo frame round-trips */
++    memset(buf, 0, sizeof(buf)); bitpos = 0;
++    put(1, 3); put(0, 4); put(0, 12); put(0, 1); put(0, 2); put(1, 1);
++    int16_t want[SPF * 2];
++    for (int i = 0; i < SPF; i++) {
++        want[2 * i] = (int16_t)(18000 * sin(2 * M_PI * 440 * i / 44100.0));
++        want[2 * i + 1] = (int16_t)(-want[2 * i] / 2);
++        put((uint16_t)want[2 * i], 16); put((uint16_t)want[2 * i + 1], 16);
++    }
++    put(7, 3);
++    int out = decode(buf, (bitpos + 7) / 8, pcm);
++    int ok = out == SPF * 4 && memcmp(pcm, want, sizeof(want)) == 0;
++    printf("verbatim frame: %d bytes out, %s\n", out, ok ? "matches" : "MISMATCH");
++
++    /* 2: fuzz. Random frames, and the verbatim frame with header bits flipped */
++    long n = argc > 1 ? atol(argv[1]) : 200000;
++    srand(1);
++    unsigned char f[4096];
++    int good = (bitpos + 7) / 8;
++    for (long i = 0; i < n; i++) {
++        int len;
++        if (i & 1) {
++            len = rand() % 64;
++            for (int j = 0; j < len; j++) f[j] = rand();
++        } else {
++            len = rand() % (good + 1);
++            memcpy(f, buf, good);
++            for (int k = rand() % 6; k >= 0; k--) f[rand() % 12] ^= 1 << (rand() % 8);
++        }
++        decode(f, len, pcm);
++    }
++    printf("fuzz: %ld frames, no fault\n", n);
++    return ok ? 0 : 1;
++}
+diff --git a/android/uxplay_jni.c b/android/uxplay_jni.c
+index fd51cfa..3d66412 100644
+--- a/android/uxplay_jni.c
++++ b/android/uxplay_jni.c
+@@ -289,6 +289,15 @@ static void cb_mirror_video_running(void *cls, bool running) {
+ static pthread_mutex_t g_alac_lock = PTHREAD_MUTEX_INITIALIZER;
+ static alac_file *g_alac;
+ static int g_alac_spf = 352;
++#define ALAC_MAX_SPF 4096
++/* The decoder's bit reader has no notion of where its input ends, so a short
++   or malformed frame would be read past. Frames are copied into this, zero
++   padded. A channel sample costs at most 9 bits of Rice prefix and 17 of
++   escape, a zero-run code after it 25 more, and 8 uncompressed: 59 bits, so
++   15 bytes covers a stereo sample, and the headers and predictor tables fit
++   in the extra kilobyte. No read of a frame of up to ALAC_MAX_SPF samples
++   leaves it. Guarded by g_alac_lock. */
++static unsigned char g_alac_in[ALAC_MAX_SPF * 15 + 1024];
+ 
+ /* The ALAC stream parameters AirPlay always uses: its fmtp line is
+    "96 352 0 16 40 10 14 2 255 0 0 44100", which is also what uxplay.cpp's
+@@ -299,7 +308,9 @@ static void alac_reset(int spf) {
+         alac_free(g_alac);
+     g_alac = alac_create(16, 2);
+     if (g_alac != NULL) {
+-        g_alac_spf = spf > 0 ? spf : 352;
++        /* From the sender's SETUP. The predictor warm-up writes up to 32
++           samples whatever the frame length, so not below that either. */
++        g_alac_spf = spf >= 64 && spf <= ALAC_MAX_SPF ? spf : 352;
+         g_alac->setinfo_max_samples_per_frame = g_alac_spf;
+         g_alac->setinfo_7a = 0;
+         g_alac->setinfo_sample_size = 16;
+@@ -343,14 +354,18 @@ static void cb_audio_process(void *cls, raop_ntp_t *ntp, audio_decode_struct *da
+     if (data->ct == 2) {
+         /* ALAC -> interleaved 16-bit stereo, host order, which is what
+            AudioTrack's ENCODING_PCM_16BIT wants. */
+-        int16_t pcm[4096 * 2];
+-        int out_bytes = sizeof(pcm);
++        int16_t pcm[ALAC_MAX_SPF * 2];
+         pthread_mutex_lock(&g_alac_lock);
+-        if (g_alac == NULL) {
++        if (g_alac == NULL || data->data_len > (int)sizeof(g_alac_in)) {
+             pthread_mutex_unlock(&g_alac_lock);
+             return;
+         }
+-        alac_decode_frame(g_alac, data->data, pcm, &out_bytes);
++        memcpy(g_alac_in, data->data, data->data_len);
++        memset(g_alac_in + data->data_len, 0, sizeof(g_alac_in) - data->data_len);
++        /* Exactly one frame's worth, so the decoder's own check refuses a
++           frame that claims more samples than the stream was set up for. */
++        int out_bytes = g_alac_spf * 4;
++        alac_decode_frame(g_alac, g_alac_in, pcm, &out_bytes);
+         pthread_mutex_unlock(&g_alac_lock);
+         if (out_bytes <= 0)
+             return;
+-- 
+2.43.0
+

@@ -48,6 +48,53 @@ names our jar. The upstreamable version is the general problem: ATV products
 cannot add a key handler without editing this file. Worth raising with
 LineageOS as a question rather than a patch.
 
+## UxPlay and libplist
+
+These go to **those projects**, not to LineageOS or AOSP:
+<https://github.com/FDH2/UxPlay> and <https://github.com/libimobiledevice/libplist>.
+Two of them are security fixes that matter to every UxPlay user, Android or
+not, and are the most valuable thing in this directory to anyone else.
+
+### uxplay/0003 — bound the fp-setup mode, and the SETUP ekey and eiv sizes
+
+A sender picks the FairPlay setup mode and sends key material whose length it
+chooses. Neither was checked, so a device on the same network could walk the
+mode off the end of a table, or hand over an `ekey`/`eiv` longer than the
+buffers they are copied into. Both are now range-checked and refused.
+
+**Status**: compiled and running on porg. **Reachable by any device on the
+LAN, with no pairing needed**, which makes it worth sending upstream on its
+own. Not demonstrated against a real Apple sender, because none has met this
+build yet.
+
+### uxplay/0004 — pin mode: make pairing required, not just offered
+
+Upstream's PIN mode asks a client to pair but never insists: a client could
+skip pair-verify and go straight to streaming, and one that asked to pair
+without ever requesting a code was handed "0000". In PIN mode a connection now
+gets no FairPlay setup and no `SETUP` until it has completed pair-verify, a
+code exists only between being shown and first use, for at most two minutes,
+and pairing without a code is refused.
+
+**Status**: compiled and running; the code screen and the refusal paths are
+exercised by our self-test. **Pairing with a real Apple client is unproven** —
+say so when sending it.
+
+### uxplay/0002 — ALAC decoder, bounded against crafted frames
+
+The ALAC decoder, inherited from Shairport, could be driven to overrun the
+heap by any device on the LAN. Bounded and fuzzed under ASan
+(`android/tests/alac_check.c`). The same code exists in other projects that
+took it from Shairport, so it is worth reporting there too.
+
+### The rest are Android plumbing
+
+uxplay/0001 and 0005, and both libplist patches, build these libraries with
+Soong and host UxPlay's protocol library over JNI. Useful to anyone putting
+UxPlay on Android, of no use to a desktop build, and they touch no protocol
+logic. uxplay/0006 and libplist/0002 only declare licences for Android's
+notice system. Offer them, do not push them.
+
 ## TvSettings/0001 — say that Back skips accessory pairing
 
 The pairing step is shown during setup so a user with no input device can pair
@@ -379,7 +426,12 @@ adds a shortcut row to the panel so it can be turned off. The toggle removes
 the shortcut, not the panel — the notification indicator still works, so it
 cannot strand a user who just disabled their only way in. Defaults to on.
 
-**Status**: compiles (`m Catapult`, 49s). Not yet run.
+**Status**: `KEYCODE_MENU` **verified on porg** — it opens the panel, and is
+how the panel has been reached throughout this project's testing.
+`KEYCODE_SETTINGS` is **unverified and probably unreachable**: the framework
+consumes it before any app sees it (`config_settingsKeyBehavior`), so the
+remote's settings button never arrives. That half should not be sent upstream
+until it has been shown to do something. See RAIL 11.
 
 Note for bench testing: our FRDM-K64F injector is a boot-protocol keyboard
 (usage page 0x07 only) and its table has no Application key, so it cannot send
@@ -405,6 +457,12 @@ reads back.
 Upstreamable as-is: the tile resolves each receiver's service before offering
 it and hides itself when none is installed, so the patch is inert on a tree
 without them.
+
+**Status**: verified on porg throughout, and still in daily use — the tile is
+how AirPlay is turned on and off here, and Catapult/0011 later added the
+pairing controls to the same dialog. Depends on our AirPlay receiver for
+anything to list, so not upstreamable as it stands; the tile is a shell that
+would show nothing on a stock build.
 
 ## Catapult/0007 — every row of the panel the same width
 
@@ -477,6 +535,12 @@ shipped as `system_file`, and init could not transition it into the `shairport`
 domain. Both path forms are listed. (Exported on 29 September into the fork's
 working tree by mistake; it only reached this directory on the 30th.)
 
+**Status**: **superseded.** shairport-sync is no longer built — UxPlay replaced
+it on 30 September — so the domain this labels is a leftover, tracked by RAIL
+17. The finding itself still holds for any `/system_ext` file on porg, where
+that path is a symlink into `/system`, and is worth keeping for that reason
+alone.
+
 ## porg/0004 — a uid of its own for the AirPlay receiver
 
 `AID_SYSTEM_EXT_AIRPLAY` (7500) in a porg `config.fs`. The daemon cannot run as
@@ -485,11 +549,19 @@ itself and hangs waiting for an in-process service — and should not run as
 `media`, which audioserver trusts to attribute audio to other uids. See
 `docs/streaming-targets.md`, "Why it was silent".
 
+**Status**: **no longer used.** The receiver is an ordinary app now, playing
+through AudioTrack — verified on the device, where it runs as `u0_a62`, not
+7500. A leftover, tracked by RAIL 17. The reason it exists is still worth
+reading before running any native audio client.
+
 ## porg/0005 — the policy the AirPlay daemon needs once audio flows
 
 audioserver's callbacks into the daemon, PlayerBase's registration with
 AudioService, and mediametrics — the last because a refused lookup costs ten
 seconds inside `openStream`, not because anything uses the metrics.
+
+**Status**: **no longer used**, for the same reason as porg/0004 — there is no
+native daemon any more. A leftover, tracked by RAIL 17.
 
 ## porg/0006 — label the AirPlay session-interrupt property
 
@@ -497,3 +569,9 @@ seconds inside `openStream`, not because anything uses the metrics.
 takes audio focus for good, and watched by init to restart the daemon — ending
 the session without switching the receiver off. Same `shairport_prop` label as
 the enable flag.
+
+**Status**: **half live.** The `interrupt` property itself is unused — the app
+ends a session in process now. The property *label* must stay: the Streaming
+tile and the receiver both use `persist.jetsontv.airplay.enabled`, which is
+`true` on the device right now and is labelled by this same rule. Renaming the
+label away from `shairport` is part of RAIL 17.

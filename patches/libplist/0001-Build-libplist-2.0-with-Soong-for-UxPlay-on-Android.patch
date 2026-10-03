@@ -1,0 +1,101 @@
+From db87bf05b3c3a2affc1a8430147488c95532eaf5 Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Wed, 30 Sep 2026 09:42:13 -0500
+Subject: [PATCH 1/2] Build libplist-2.0 with Soong, for UxPlay on Android
+
+A static library of the C sources and libcnary, for the AirPlay receiver
+in calicopizzadelivery/jetson-nano-android-tv, which reaches it through
+calicopizzadelivery/UxPlay. The C++ wrapper and the tools are left out.
+
+android/config.h stands in for what autotools would generate, listing
+only what bionic is known to have. It is force-added: the project's
+.gitignore matches config.*.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: I25a255d4831f1793cecde96f22a6884e733e59ba
+---
+ Android.bp       | 44 ++++++++++++++++++++++++++++++++++++++++++++
+ android/config.h | 20 ++++++++++++++++++++
+ 2 files changed, 64 insertions(+)
+ create mode 100644 Android.bp
+ create mode 100644 android/config.h
+
+diff --git a/Android.bp b/Android.bp
+new file mode 100644
+index 0000000..30f3c25
+--- /dev/null
++++ b/Android.bp
+@@ -0,0 +1,44 @@
++// libplist for Android: the C library only (no C++ bindings, Cython or tools).
++// UxPlay needs it to parse and build the binary plists AirPlay exchanges, and
++// AOSP does not ship it.
++//
++// SPDX-License-Identifier: LGPL-2.1-or-later
++
++cc_library_static {
++    name: "libplist-2.0",
++    vendor_available: false,
++    srcs: [
++        "src/base64.c",
++        "src/bytearray.c",
++        "src/hashtable.c",
++        "src/ptrarray.c",
++        "src/time64.c",
++        "src/xplist.c",
++        "src/bplist.c",
++        "src/jsmn.c",
++        "src/jplist.c",
++        "src/oplist.c",
++        "src/out-default.c",
++        "src/out-plutil.c",
++        "src/out-limd.c",
++        "src/plist.c",
++        "libcnary/node.c",
++        "libcnary/node_list.c",
++    ],
++    local_include_dirs: [
++        "android",
++        "src",
++        "libcnary/include",
++    ],
++    export_include_dirs: ["include"],
++    cflags: [
++        "-DHAVE_CONFIG_H",
++        "-Wall",
++        "-Werror",
++        "-Wno-unused-parameter",
++        "-Wno-sign-compare",
++    ],
++    // Linked statically into the JNI library that hosts UxPlay.
++    sdk_version: "current",
++    stl: "none",
++}
+diff --git a/android/config.h b/android/config.h
+new file mode 100644
+index 0000000..99a2790
+--- /dev/null
++++ b/android/config.h
+@@ -0,0 +1,20 @@
++/*
++ * What autotools would have found on Android. bionic has all of these.
++ *
++ * SPDX-License-Identifier: LGPL-2.1-or-later
++ */
++#ifndef LIBPLIST_ANDROID_CONFIG_H
++#define LIBPLIST_ANDROID_CONFIG_H
++
++#define HAVE_GMTIME_R 1
++#define HAVE_LOCALTIME_R 1
++#define HAVE_MEMMEM 1
++#define HAVE_STRNDUP 1
++#define HAVE_STRPTIME 1
++#define HAVE_TIMEGM 1
++#define HAVE_TM_TM_GMTOFF 1
++#define HAVE_TM_TM_ZONE 1
++
++#define PACKAGE_VERSION "2.7.0"
++
++#endif
+-- 
+2.43.0
+
