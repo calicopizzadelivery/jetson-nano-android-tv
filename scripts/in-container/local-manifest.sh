@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Point the four projects we carry commits in at our forks, by installing
+# Point the projects we carry commits in at our forks, by installing
 # manifests/jetson-tv.xml as a repo local manifest and syncing them.
 #
 # This replaces the patch queue as the *build* mechanism for those projects.
@@ -15,6 +15,7 @@ DST="${SRC}/.repo/local_manifests/zz-jetson-tv.xml"
 
 PROJECTS=(
     device/nvidia/porg
+    device/lineage/atv
     device/nvidia/tegra-common
     kernel/nvidia/kernel-4.9
     packages/apps/TvSettings

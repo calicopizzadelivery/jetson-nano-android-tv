@@ -1,0 +1,108 @@
+From 4cc643758ceccfece06fb0f3f9e6605a9820d6ce Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 14:06:16 -0500
+Subject: [PATCH] Buttons: let a controller's Home button be a Guide button
+ instead
+
+A game controller's big centre button reports BUTTON_MODE, which Android
+does nothing with, so JetsonTVKeyHandler turns it into Home -- the SHIELD
+behaviour, and what a television wants. That is the wrong answer while
+game streaming, where the same button is the Guide button that opens
+Steam Big Picture's menu.
+
+Adds a switch to System > Buttons, beside the other hardware button
+behaviour. It writes Settings.Secure jetsontv_gamepad_home_button, which
+the key handler reads on every press, so it takes effect immediately --
+without a reboot, and without leaving a running stream.
+
+Unlike the switches already on this screen it is not persistent: its
+state is read back from the setting the handler acts on, so the switch
+cannot drift from the behaviour.
+
+Change-Id: Ibb1ef56fa8762893aeea77c9c84a9084615cd7a4
+---
+ Settings/res/values/strings.xml               |  4 ++++
+ Settings/res/xml/buttons.xml                  |  9 +++++++++
+ .../tv/settings/system/ButtonsFragment.java   | 19 +++++++++++++++++++
+ 3 files changed, 32 insertions(+)
+
+diff --git a/Settings/res/values/strings.xml b/Settings/res/values/strings.xml
+index 94094cf29..b6d34e39b 100644
+--- a/Settings/res/values/strings.xml
++++ b/Settings/res/values/strings.xml
+@@ -3022,6 +3022,10 @@
+     <!-- Subtitle for volume change during select -->
+     <string name="volume_change_subtitle_select">Only affects volume on %1$s device , not on TV</string>
+ 
++    <!-- System > Buttons: a game controller's centre (Guide) button -->
++    <string name="gamepad_home_button_title">Controller Home button</string>
++    <string name="gamepad_home_button_summary">The big centre button on a game controller goes to the home screen. Turn this off to send it to apps instead, as the Guide button \u2014 for the Steam Big Picture menu over game streaming.</string>
++
+     <!-- System > AirPlay: the AirPlay receiver (org.lineageos.tv.airplay) -->
+     <string name="airplay_title" translatable="false">AirPlay</string>
+     <!-- Summary of the switch that turns the AirPlay receiver on and off -->
+diff --git a/Settings/res/xml/buttons.xml b/Settings/res/xml/buttons.xml
+index 24711fce4..afbb23929 100644
+--- a/Settings/res/xml/buttons.xml
++++ b/Settings/res/xml/buttons.xml
+@@ -42,4 +42,13 @@
+         android:summary="@string/press_volume_up_and_down_to_mute_summary"
+         android:defaultValue="0" />
+ 
++    <!-- Not persistent: the state is read from Settings.Secure in the
++         fragment, because that is what the key handler acts on. -->
++    <com.android.tv.settings.widget.SwitchWithSoundPreference
++        android:key="gamepad_home_button"
++        android:order="3"
++        android:persistent="false"
++        android:title="@string/gamepad_home_button_title"
++        android:summary="@string/gamepad_home_button_summary" />
++
+ </PreferenceScreen>
+diff --git a/Settings/src/com/android/tv/settings/system/ButtonsFragment.java b/Settings/src/com/android/tv/settings/system/ButtonsFragment.java
+index abaef589a..6ceb3f940 100644
+--- a/Settings/src/com/android/tv/settings/system/ButtonsFragment.java
++++ b/Settings/src/com/android/tv/settings/system/ButtonsFragment.java
+@@ -20,6 +20,7 @@ import android.app.tvsettings.TvSettingsEnums;
+ import android.content.Context;
+ import android.os.Bundle;
+ import android.os.UserHandle;
++import android.provider.Settings;
+ 
+ import androidx.annotation.Keep;
+ import androidx.preference.ListPreference;
+@@ -43,6 +44,14 @@ public class ButtonsFragment extends SettingsPreferenceFragment
+     private static final String KEY_ADVANCED_REBOOT = "advanced_reboot";
+     private static final String KEY_POWER_BUTTON_LONG_PRESS_ACTION =
+             "power_button_long_press_action";
++    /**
++     * The big centre button on a game controller. JetsonTVKeyHandler reads
++     * this on every press: 1 goes Home, 0 passes the button to the app as
++     * KEYCODE_BUTTON_MODE, which is what Steam Big Picture wants.
++     */
++    private static final String KEY_GAMEPAD_HOME_BUTTON = "gamepad_home_button";
++    private static final String GAMEPAD_HOME_BUTTON_SETTING = "jetsontv_gamepad_home_button";
++
+     private static final String KEY_PRESS_VOLUME_UP_AND_DOWN_TO_MUTE =
+             "press_volume_up_and_down_to_mute";
+ 
+@@ -93,6 +102,16 @@ public class ButtonsFragment extends SettingsPreferenceFragment
+                         LineageSettings.System.VOLUME_UP_AND_DOWN_MUTE, (Boolean) newValue ? 1 : 0);
+                 return true;
+             });
++
++        TwoStatePreference gamepadHome = findPreference(KEY_GAMEPAD_HOME_BUTTON);
++        gamepadHome.setChecked(Settings.Secure.getInt(context.getContentResolver(),
++                GAMEPAD_HOME_BUTTON_SETTING, 1) != 0);
++        gamepadHome.setOnPreferenceChangeListener(
++            (preference, newValue) -> {
++                Settings.Secure.putInt(context.getContentResolver(),
++                        GAMEPAD_HOME_BUTTON_SETTING, (Boolean) newValue ? 1 : 0);
++                return true;
++            });
+     }
+ 
+     @Override
+-- 
+2.43.0
+

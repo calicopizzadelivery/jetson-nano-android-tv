@@ -1,0 +1,17 @@
+// SPDX-FileCopyrightText: 2026 The LineageOS Project
+// SPDX-License-Identifier: Apache-2.0
+
+// A device key handler, the extension point LineageOS's PhoneWindowManager
+// offers for keys the framework itself does nothing with. Loaded by path from
+// config_deviceKeyHandlerLibs (see Branding/overlay), so it installs as a jar
+// rather than being linked by anyone.
+java_library {
+    name: "JetsonTVKeyHandler",
+    srcs: ["src/**/*.java"],
+    installable: true,
+    system_ext_specific: true,
+    // Platform, not an SDK: com.android.internal.os.DeviceKeyHandler is
+    // internal, and this runs inside system_server.
+    sdk_version: "",
+    libs: ["framework"],
+}

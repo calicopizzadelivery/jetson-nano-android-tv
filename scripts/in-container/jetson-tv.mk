@@ -46,6 +46,13 @@ PRODUCT_COPY_FILES += \
     $(foreach f,$(wildcard vendor/jetson-tv/Input/keylayout/*.kl),\
         $(f):$(TARGET_COPY_OUT_PRODUCT)/usr/keylayout/$(notdir $(f)))
 
+# A game controller's Guide button goes Home, unless the user turns that off.
+# The key layout keeps the honest BUTTON_MODE so the button stays available to
+# apps; the Home behaviour is this handler, which Branding/overlay points
+# PhoneWindowManager at. See KeyHandler/.
+PRODUCT_PACKAGES += \
+    JetsonTVKeyHandler
+
 # Third-party apps, from PrebuiltApps/apps.json via prebuilt_apps.py, which
 # tree-local-changes.sh runs before every build. A plain include, not an
 # -include: a build that skipped that step must fail, not quietly ship

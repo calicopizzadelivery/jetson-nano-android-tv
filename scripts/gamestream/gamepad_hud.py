@@ -14,10 +14,17 @@ gamepad_probe.py uses, so it needs a stream to be running with
 CONTROLLER=enabled. With no device it draws an idle screen and keeps looking,
 which is what happens between streams.
 
-The HOME box is worth a word. The pad's own Home button never reaches here,
-because our key layout gives it to Android for the launcher. Moonlight still
-offers the Guide button through Start+Select, so that box does light -- which
-is how Steam Big Picture's menu gets opened over a stream.
+The HOME box is worth a word. On an 8BitDo Ultimate 2C the pad's own Home
+button is reported as BUTTON_MODE and may be taken by Android for the
+launcher (JetsonTVKeyHandler, and the setting behind it). Moonlight also
+offers the Guide button through Start+Select, so that box lights either way --
+which is how Steam Big Picture's menu gets opened over a stream.
+
+There is deliberately nothing for Square, Star, L4 or R4. Verified on the
+2.4 GHz receiver, 2 October: pressed repeatedly, they produce no input event
+at all on the host. The pad handles them itself -- Star switches profile, and
+the paddles do nothing until 8BitDo's own software assigns them an existing
+button, which is then what they report.
 
 Drawn through libX11 by ctypes and double-buffered through a pixmap: thebe
 has no python-xlib, and nothing here needs a toolkit.
@@ -326,6 +333,8 @@ def draw(c, pad, connected):
         c.text(TEXT, bx + S(6), h * 0.90 + S(27), name)
     c.text("#8a97a8", w * 0.40, h * 0.90 + S(74),
            "the pad's Home button goes to Android; press Start+Select for Guide")
+    c.text("#8a97a8", w * 0.40, h * 0.90 + S(98),
+           "Square, Star, L4 and R4 send nothing: the pad keeps them to itself")
     c.present()
 
 

@@ -136,6 +136,22 @@ This one is **not upstreamable at all**, and unlike `porg/0001` there is no
 argument to be had about it: AmbientDream lives in `vendor/jetson-tv`, which
 is ours.
 
+## TvSettings/0004 — a switch for the controller's Home button
+
+A game controller's centre button reports BUTTON_MODE, which Android does
+nothing with. `JetsonTVKeyHandler` (vendor/jetson-tv/KeyHandler) turns it into
+Home; this switch, in System > Buttons, turns that off so apps get the Guide
+button instead — which is what opens Steam Big Picture's menu over game
+streaming. It writes `Settings.Secure jetsontv_gamepad_home_button`, read by
+the handler on every press, so it applies without a reboot or leaving a
+stream.
+
+**Status**: verified on porg with an 8BitDo Ultimate 2C. On: the button leaves
+a Moonlight stream for the launcher and the host sees nothing. Off: the host's
+virtual pad receives Guide, shown lighting up on `gamepad_hud.py`. Operating
+the switch in the UI moves the setting both ways. Depends on our key handler,
+so not for upstream.
+
 ## TvSettings/0003 — Settings > System > AirPlay
 
 A page for the AirPlay receiver, under System, next to Screen saver: its

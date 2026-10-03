@@ -36,6 +36,16 @@
            name="calicopizzadelivery/android_packages_apps_Catapult"
            revision="refs/heads/lineage-22.2-jetson-tv" />
 
+  <!-- The ATV device config, for one line: its config_deviceKeyHandler*
+       arrays. They are single resources, so a product overlay replaces them
+       wholesale rather than appending, and a product overlay listed after
+       this one does not win. Our third handler therefore has to live in the
+       file itself. -->
+  <remove-project path="device/lineage/atv" optional="true" />
+  <project path="device/lineage/atv" remote="github"
+           name="calicopizzadelivery/android_device_lineage_atv"
+           revision="refs/heads/lineage-22.2-jetson-tv" />
+
   <remove-project path="device/nvidia/tegra-common" optional="true" />
   <project path="device/nvidia/tegra-common" remote="github"
            name="calicopizzadelivery/android_device_nvidia_tegra-common"

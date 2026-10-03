@@ -159,9 +159,25 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
       registers as a separate mouse and keyboard device sharing the same
       key layout. Harmless so far; the thing to watch is an app seeing two
       controllers.
-    Still to do: rumble (the pad advertises `FF_RUMBLE` and Android attached
-    a vibrator, but nothing has driven it -- needs a game or a stream), and
-    the pad inside Moonlight, Lemuroid and Kodi.
+    **Confirmed in Moonlight 2-3 October**, against Sunshine on thebe with
+    `CONTROLLER=enabled`: the pad drives Moonlight's own UI, Moonlight
+    advertises it to Sunshine as an Xbox Series pad, and A, B, X, Y, L1, R1,
+    L3, R3, the d-pad, Select, Start, both sticks and both analogue triggers
+    all arrive on the host. **Rumble works** in both directions
+    (`gamepad_probe.py rumble`). `scripts/gamestream/gamepad_hud.py` draws
+    the pad's state onto the streamed picture, so this is now testable by
+    looking at the television.
+    - **Square, Star, L4 and R4 send nothing.** Pressed repeatedly on the
+      2.4 GHz receiver, they produce no event at all on the Jetson, on either
+      of the dongle's HID interfaces. They are pad-internal: Star switches
+      profile, and the paddles report an existing button only once 8BitDo's
+      own software assigns them one. Nothing to map.
+    - **The centre button is a setting**, System > Buttons > Controller Home
+      button (TvSettings/0004): on, `JetsonTVKeyHandler` makes it go Home;
+      off, apps get `BUTTON_MODE`, so Moonlight hands the host a real Guide
+      button for Steam Big Picture. Both verified on porg. Moonlight also
+      synthesises Guide from Start+Select either way.
+    Still to do: the pad inside Lemuroid (needs a ROM) and Kodi.
 
 ### Moonlight and Steam Link on this platform
 
