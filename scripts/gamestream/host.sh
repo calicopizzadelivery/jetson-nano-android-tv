@@ -35,6 +35,10 @@ stop_pid() {
     fi
 }
 
+# CONTROLLER=enabled lets Sunshine create a virtual gamepad for the client's
+# pad, which is what makes a controller usable in a stream and is how rumble
+# gets back to it. Keyboard and mouse stay off: their uinput devices would
+# drive thebe's real desktop, while a gamepad cannot.
 case "${1:-}" in
 start)
     size="${2:-1920x1080}"
@@ -55,7 +59,7 @@ upnp = disabled
 address_family = ipv4
 keyboard = disabled
 mouse = disabled
-controller = disabled
+controller = ${CONTROLLER:-disabled}
 stream_audio = disabled
 EOF
     cat > "$STATE/apps.json" <<'EOF'
