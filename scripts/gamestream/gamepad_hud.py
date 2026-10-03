@@ -14,6 +14,11 @@ gamepad_probe.py uses, so it needs a stream to be running with
 CONTROLLER=enabled. With no device it draws an idle screen and keeps looking,
 which is what happens between streams.
 
+The HOME box is worth a word. The pad's own Home button never reaches here,
+because our key layout gives it to Android for the launcher. Moonlight still
+offers the Guide button through Start+Select, so that box does light -- which
+is how Steam Big Picture's menu gets opened over a stream.
+
 Drawn through libX11 by ctypes and double-buffered through a pixmap: thebe
 has no python-xlib, and nothing here needs a toolkit.
 
@@ -312,13 +317,15 @@ def draw(c, pad, connected):
         c.circle(LIT if on(name) else DIM, cx + dx * off, cy + dy * off, r)
         c.text(BG if on(name) else TEXT, cx + dx * off - S(5), cy + dy * off + S(6), name)
 
-    # Select / Start / Home. Home stays dark on purpose: see the note below.
+    # Select / Start / Home. The pad's own Home button never gets here --
+    # Android takes it for the launcher -- but Moonlight synthesises Guide
+    # from Start+Select, and that does light this up.
     for i, name in enumerate(("SELECT", "START", "HOME")):
         bx = w * 0.42 + i * S(130)
         c.rect(LIT if on(name) else DIM, bx, h * 0.90, S(110), S(40))
         c.text(TEXT, bx + S(6), h * 0.90 + S(27), name)
-    c.text("#8a97a8", w * 0.42, h * 0.90 + S(74),
-           "HOME never lights: Android consumes it before Moonlight sees it")
+    c.text("#8a97a8", w * 0.40, h * 0.90 + S(74),
+           "the pad's Home button goes to Android; press Start+Select for Guide")
     c.present()
 
 
