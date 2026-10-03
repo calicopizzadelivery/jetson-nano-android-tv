@@ -42,7 +42,7 @@ stop_pid() {
 case "${1:-}" in
 start)
     size="${2:-1920x1080}"
-    pattern="${3:-ball}"
+    pattern="${3:-ball}"   # ball | zone | gamepad
     cat > "$STATE/sunshine.conf" <<EOF
 sunshine_name = thebe-test
 min_log_level = info
@@ -70,8 +70,15 @@ EOF
         >"$STATE/xephyr.log" 2>&1 &
     echo $! > "$STATE/xephyr.pid"
     for _ in $(seq 50); do DISPLAY=$XDISPLAY xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
-    DISPLAY=$XDISPLAY python3 "$HERE/pattern.py" --size "$size" --pattern "$pattern" \
-        >"$STATE/pattern.log" 2>&1 &
+    if [ "$pattern" = gamepad ]; then
+        # The controller's own state as the streamed picture: press a button on
+        # the pad and watch it light up on the television. Needs CONTROLLER=enabled.
+        DISPLAY=$XDISPLAY python3 "$HERE/gamepad_hud.py" --size "$size" \
+            >"$STATE/pattern.log" 2>&1 &
+    else
+        DISPLAY=$XDISPLAY python3 "$HERE/pattern.py" --size "$size" --pattern "$pattern" \
+            >"$STATE/pattern.log" 2>&1 &
+    fi
     echo $! > "$STATE/pattern.pid"
     "$SUNSHINE" "$STATE/sunshine.conf" --creds "$USER_NAME" "$(cat "$PASS_FILE")" >/dev/null 2>&1 || true
     DISPLAY=$XDISPLAY "$SUNSHINE" "$STATE/sunshine.conf" >"$STATE/sunshine.stdout" 2>&1 &
