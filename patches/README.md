@@ -229,8 +229,11 @@ Paired with seven key layouts in `scripts/in-container/Input/keylayout`,
 installed to `/product/usr/keylayout`: without them Android's generic layout
 puts an xpad pad's triggers on the right-stick axes.
 
-**Status**: builds, boots, and is in the running kernel; the layouts are on
-the device. Not yet tested with a pad. Upstreamable only in the sense that it
+**Status**: verified 2 October on porg with an 8BitDo Ultimate 2C on its
+own 2.4 GHz receiver. `xpad` binds `2dc8:310a` instead of `hid-generic`,
+and every button, stick, trigger and d-pad direction is correct. Rumble is
+advertised but undriven. The Home button is mapped to HOME and needed an
+unrelated fix first: see CLAUDE.md on `tv_user_setup_complete`. Upstreamable only in the sense that it
 is upstream already: this is for kernels older than those commits.
 
 ## Catapult/0004 — make the audio output tile a picker

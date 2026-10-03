@@ -143,8 +143,25 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     `2dc8:310a` Ultimate 2C, plus the Ultimate 2), and this 4.9 `xpad` does
     not list `0x2dc8` at all. Upstream added it in 2024-25. *Backported 1
     October (kernel/0002), with key layouts for the seven IDs; in the image
-    and booted.* Still to do: verify with a real pad (buttons, sticks and
-    triggers, rumble, and in Moonlight, Lemuroid and Kodi).
+    and booted. Confirmed 2 October with an Ultimate 2C on its own 2.4 GHz
+    receiver*: `xpad` claims it, and all four face buttons, both shoulders,
+    Select, Start, both stick clicks, both sticks at full travel, both
+    analogue triggers and the d-pad are correct. The key layout is provably
+    ours, not the generic fallback: Android reads the right stick as Z/RZ
+    and the triggers as LTRIGGER/RTRIGGER, which only our file specifies.
+    Two things to know about that receiver:
+    - **Idle, it is `2dc8:301c` with the product string "IDLE"**, a
+      vendor-specific HID interface with no gamepad descriptor, so
+      `hid-generic` takes it and no input device appears. It re-enumerates
+      as `2dc8:310a` when the pad connects. Not a fault: no pad is attached
+      to it yet.
+    - **It also presents two further HID interfaces**, which Android
+      registers as a separate mouse and keyboard device sharing the same
+      key layout. Harmless so far; the thing to watch is an app seeing two
+      controllers.
+    Still to do: rumble (the pad advertises `FF_RUMBLE` and Android attached
+    a vibrator, but nothing has driven it -- needs a game or a stream), and
+    the pad inside Moonlight, Lemuroid and Kodi.
 
 ### Moonlight and Steam Link on this platform
 
