@@ -4,7 +4,7 @@ The running action item list (RAIL): what is still to test or build, grouped
 by what it is waiting on. Each item points at the document with the detail. When one closes,
 move its result into that document and strike it here.
 
-Last reviewed 30 September 2026.
+Last reviewed 4 October 2026.
 
 ## Waiting on the Wi-Fi/Bluetooth radio
 
@@ -119,16 +119,70 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
     carries a status, the DocumentsUI, atv, UxPlay and libplist changes are
     exported, and the Shairport-era porg entries are marked superseded.*
 19a. **Send the upstreamable changes.** Nothing has been offered to anyone
-    yet. Ready as they stand: `DocumentsUI/0001` (a d-pad can reach the file
-    list — the strongest candidate, and AOSP as well as LineageOS),
-    `Catapult/0009`, `Catapult/0010`, `TvSettings/0002`, and the path half of
-    `tegra-common/0001` — **not** its Realtek half, which no radio has run.
-    Separately, to UxPlay: `uxplay/0003` and `uxplay/0004` are security fixes
-    reachable by any device on the LAN, and `uxplay/0002` bounds an ALAC
-    decoder other projects also took from Shairport. See `patches/README.md`.
-    `atv/0001` is not a patch to send but a question to raise: an ATV product
-    cannot add a device key handler without editing that file, because the two
-    arrays are single resources an overlay replaces rather than extends.
+    yet. Every one of these is exported and written up in
+    `patches/README.md`; the subsection below is the shortlist and what to
+    say when sending each. Taken 4 October from an inventory of all 12 forks.
+
+### What is ready to send, and to whom
+
+Of 26 changes across 12 forks, these stand on their own — they fix something
+general and carry nothing specific to this box. The rest depend on our AirPlay
+receiver, our key handler, or porg policy, and are ours to keep.
+
+**To AOSP, and to LineageOS**
+
+- **`DocumentsUI/0001` — a d-pad can reach the file list.** The strongest
+  candidate here. Directional focus does not cross from the picker's header
+  into its file list, and the Tab key that would is on no remote or game
+  controller, so on a television the files cannot be reached at all. It fixes
+  the picker for *any* d-pad device; Android TV is simply the case nobody
+  tests. Say that focus still starts on the header button when one is shown,
+  which one press now leaves — before, it could not be left.
+
+**To LineageOS**
+
+- **`Catapult/0009` — one tile per app.** An app with separate TV and phone
+  launchers appeared twice. Apps with only a phone launcher are unaffected.
+- **`Catapult/0010` — show the wallpaper on the home screen.** The launcher
+  painted a flat colour over whatever wallpaper was set. A stock build would
+  show LineageOS's own default.
+- **`TvSettings/0002` — a row for the screen saver's own settings.** A screen
+  saver with anything to configure is configurable exactly once, at the moment
+  it is first chosen, because `onPreferenceChange` only fires on a *change*.
+- **`tegra-common/0001`, the path half only.** Loading modules from
+  `/vendor/lib/modules` is unambiguous. **Do not send the Realtek half**: no
+  radio has ever run it. Split the commit before offering it.
+
+**To UxPlay** (<https://github.com/FDH2/UxPlay>) — the most useful thing here
+to anyone else, and nothing to do with Android:
+
+- **`uxplay/0003` — bound the fp-setup mode and the SETUP ekey/eiv sizes.**
+  A sender chose both and neither was checked, so any device on the same
+  network could walk a mode off the end of a table or overrun the buffers the
+  key material is copied into. **No pairing needed to reach it.**
+- **`uxplay/0004` — make PIN pairing required, not merely offered.** A client
+  could skip pair-verify and stream anyway, and one that asked to pair without
+  requesting a code was handed "0000".
+- **`uxplay/0002` — bound the ALAC decoder against crafted frames.** Any LAN
+  device could overrun the heap. The same decoder came from Shairport and
+  exists in other projects, so report it there too.
+
+Say plainly in all three that **no real Apple sender has met this build**: the
+fixes are compiled, running and fuzzed, but not demonstrated against the
+hardware they defend against.
+
+**Not a patch, a question** — `atv/0001`. An Android TV product cannot add its
+own device key handler without editing `device/lineage/atv`, because
+`config_deviceKeyHandlerLibs` and `config_deviceKeyHandlerClasses` are one
+resource each: an overlay replaces them rather than extending them, and a
+product overlay listed *after* that file still loses. Worth asking LineageOS
+whether products are meant to append, rather than sending our one-line entry.
+
+**Android plumbing, offer but do not push**: `uxplay/0001`, `uxplay/0005` and
+both libplist patches build these libraries with Soong and host UxPlay's
+protocol library over JNI. Useful to anyone putting UxPlay on Android, of no
+use to a desktop build. `uxplay/0006` and `libplist/0002` only declare licences
+for Android's notice system.
 
 ## Game streaming (new, 30 September)
 
