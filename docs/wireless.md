@@ -195,10 +195,23 @@ Two things to know:
   power control, and is soft-blocked — irrelevant with a USB radio, but it
   looks alarming if you read it first.
 
-Still untested: pairing anything. A BLE remote is the one that matters — it
-answers the question open since this project started, whether BLE pairing
-works on ARM64 Tegra, and whether the setup wizard's accessory step can ever
-be completed.
+**Discovery works.** The accessory screen
+(`com.android.tv.settings/.accessories.AddAccessoryActivity`) runs a full
+inquiry cycle and lists real devices in range — a TCL TV, a Samsung QLED, and
+an NVIDIA device (OUI `00:04:4B`) advertising with a gamepad class. The
+adapter also survived the bench USB hub being unplugged for 35 minutes
+without a reboot: the gadget dropped, the radio did not.
+
+Worth noting from that screen: launched directly it says **"Press Back to skip
+this step"**. The captive version that blocks the setup wizard is captive only
+because the wizard passes `no_input_mode=true` — see the setup-wizard notes in
+`CLAUDE.md`.
+
+Still untested: **pairing anything**. That is the last unproven step, and a
+BLE remote or controller is the one that matters — it answers the question
+open since this project started, whether BLE pairing works on ARM64 Tegra, and
+whether the setup wizard's accessory step can ever be completed. Bonded
+devices list is empty so far.
 
 ## Other cards
 
