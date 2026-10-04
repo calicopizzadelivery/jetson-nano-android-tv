@@ -1,0 +1,53 @@
+From ff59626821d55803a3763d2263e60d104e40ca7d Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 12:21:37 -0500
+Subject: [PATCH] arm64: tegra: build mac80211 and iwlwifi
+
+Every radio this tree carried was FullMAC -- Broadcom, Cypress, Realtek --
+so CONFIG_MAC80211 was never set, and with it no SoftMAC driver could be
+built at all. Intel's Wireless-AC cards are SoftMAC, and the 8265 (8086:24fd)
+is the one that is still cheap and available; iwlwifi already names it.
+
+mac80211 as a module to match cfg80211, which has to stay modular here
+because Cypress's fork of it is loaded at boot by a different path.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: Ie564026bbae2b12d1a8eeef7ed47ec4c139b2117
+---
+ arch/arm64/configs/tegra_android_defconfig | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/arch/arm64/configs/tegra_android_defconfig b/arch/arm64/configs/tegra_android_defconfig
+index e816cadfc36b..727c730c4369 100644
+--- a/arch/arm64/configs/tegra_android_defconfig
++++ b/arch/arm64/configs/tegra_android_defconfig
+@@ -229,6 +229,12 @@ CONFIG_BT_HCIBTUSB=m
+ CONFIG_BT_HCIUART=y
+ CONFIG_BT_HCIUART_LL=y
+ CONFIG_CFG80211=m
++# SoftMAC stack. The Broadcom and Realtek radios this tree already carries are
++# FullMAC and need only cfg80211, but Intel's iwlmvm is SoftMAC, so without
++# this an Intel card has no driver to bind to. tegra_defconfig, NVIDIA's own
++# Linux config, enables the same thing.
++CONFIG_MAC80211=m
++CONFIG_MAC80211_RC_MINSTREL_VHT=y
+ CONFIG_RFKILL=y
+ CONFIG_UEVENT_HELPER_PATH="/sbin/hotplug"
+ CONFIG_DEVTMPFS=y
+@@ -333,6 +339,13 @@ CONFIG_USB_NET_PLUSB=y
+ CONFIG_USB_NET_MCS7830=y
+ CONFIG_USB_RTL8152_SHIELD=y
+ # CONFIG_WLAN_VENDOR_TI is not set
++# Intel Wireless-AC, the 8265NGW among them: an M.2 2230 Key E card that fits
++# the Nano's slot and is the one most widely sold for it. iwlmvm covers the
++# 8000 series; iwldvm is for older cards and is left out. Matches
++# tegra_defconfig, where NVIDIA enables these for Linux.
++CONFIG_IWLWIFI=m
++CONFIG_IWLMVM=m
++# CONFIG_IWLWIFI_DEVICE_TRACING is not set
+ CONFIG_BCMDHD=m
+ CONFIG_BCMDHD_SDIO=y
+ CONFIG_BCM4354=y
+-- 
+2.43.0
+

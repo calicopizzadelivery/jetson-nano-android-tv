@@ -1,0 +1,111 @@
+From 81877b85a85a27023a7cf66448b82a2dd6a661bf Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 12:21:37 -0500
+Subject: [PATCH] wifi_loader: actually run the enumeration, and support Intel
+
+perform_enumeration() and load_modules() are defined and neither is called,
+upstream included, so no card of any kind was ever enumerated and no module
+ever inserted; the script only logged "WiFi auto card detection fail" and
+went on to the symlinks. Call them, guarded on $vendor because load_modules
+tests $device, which perform_enumeration sets.
+
+With them running, add Intel Wireless-AC. It is matched on the vendor rather
+than the device: one driver covers the family, and the 8265 alone answers to
+several ids. It is also the first SoftMAC radio here, so the stack goes in
+underneath it in order -- cfg80211, mac80211, iwlwifi, iwlmvm.
+
+That runs into foster's lkm_loader_target.sh, which has already loaded
+Cypress's stack by then: it keys off the device tree saying the Broadcom slot
+exists, not off a Broadcom card being in it. cy_cfg80211 is a fork of
+cfg80211 and claims the same symbols, so the kernel's own cfg80211 is
+refused -- "exports duplicate symbol ... (owned by cy_cfg80211)" -- and no
+SoftMAC driver can load. Unload it first. Safe because brcmfmac sits at
+refcount 0 with no Broadcom card bound; if one were fitted this branch would
+not be running.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: If73d214acd71d58b6d5d5461250d8f90bc847a15
+---
+ initfiles/wifi_loader.sh | 45 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 43 insertions(+), 2 deletions(-)
+
+diff --git a/initfiles/wifi_loader.sh b/initfiles/wifi_loader.sh
+index 2c716f3..083ee63 100644
+--- a/initfiles/wifi_loader.sh
++++ b/initfiles/wifi_loader.sh
+@@ -13,6 +13,7 @@
+ BRCM_SDIO=0x02d0
+ BRCM_PCIE=0x14e4
+ RTLK_PCIE=0x10ec
++INTEL_PCIE=0x8086
+ 
+ perform_enumeration() {
+ COUNT=0;
+@@ -28,7 +29,8 @@ while [ $COUNT -le 2 ]; do
+ 	done
+ 	for path in /sys/bus/pci/devices/*; do
+ 		vendor=$(cat $path/vendor)
+-		if [ "$vendor" = "$BRCM_PCIE" -o "$vendor" = "$RTLK_PCIE" ]; then
++		if [ "$vendor" = "$BRCM_PCIE" -o "$vendor" = "$RTLK_PCIE" \
++		     -o "$vendor" = "$INTEL_PCIE" ]; then
+ 			device=$(cat $path/device)
+ 			/vendor/bin/log -t "wifiloader" -p i "WiFi PCIE VendorID: $vendor, DeviceID: $device"
+ 			return;
+@@ -67,6 +69,38 @@ elif [ $device = "0x4355" -o $device = "0x43ef" ]; then
+ 		/vendor/bin/log -t "wifiloader" -p i "load bcmdhd_pcie module"
+ 		insmod /vendor/lib/modules/bcmdhd_pcie.ko
+ 	fi
++elif [ "$vendor" = "$INTEL_PCIE" ]; then
++	# Intel Wireless-AC, 8260/8265 among them. Matched on the vendor rather
++	# than the device: one driver covers the whole family, and the 8265
++	# alone answers to several ids (0x24fd with four subsystems, 0x24f3).
++	#
++	# foster's lkm_loader_target.sh has already loaded Cypress's stack by
++	# now: it keys off the device tree saying the Broadcom slot exists, not
++	# off a Broadcom card being in it. cy_cfg80211 is a fork of cfg80211 and
++	# claims the same symbols, so the kernel's own cfg80211 is refused --
++	#   cfg80211: exports duplicate symbol ... (owned by cy_cfg80211)
++	# -- and no SoftMAC driver can load at all. Put it back. Safe because
++	# brcmfmac sits at refcount 0 with no Broadcom card bound to it; if one
++	# were fitted, this branch would not be running.
++	for m in brcmfmac brcmutil cy_cfg80211 compat; do
++		if lsmod | grep -q "^$m "; then
++			/vendor/bin/log -t "wifiloader" -p i "unload $m (Cypress stack, no Broadcom card)"
++			rmmod $m 2>/dev/null
++		fi
++	done
++
++	# iwlmvm is SoftMAC, unlike every other radio this tree carries, so the
++	# stack has to go in underneath it in order: cfg80211, mac80211,
++	# iwlwifi, then the operating mode. Firmware comes from
++	# /vendor/firmware/iwlwifi-8265-*.ucode (vendor/jetson-tv/Firmware).
++	for m in cfg80211 mac80211 iwlwifi iwlmvm; do
++		if [ -e /vendor/lib/modules/$m.ko ]; then
++			/vendor/bin/log -t "wifiloader" -p i "load $m module"
++			insmod /vendor/lib/modules/$m.ko 2>/dev/null
++		else
++			/vendor/bin/log -t "wifiloader" -p e "missing $m.ko"
++		fi
++	done
+ elif [ $device = "0xc822" ]; then
+ 	# RTL8822CE. cfg80211 first: the Realtek driver is built against it and
+ 	# nothing else pulls it in on a board with no Broadcom radio fitted.
+@@ -80,7 +114,14 @@ elif [ $device = "0xc822" ]; then
+ fi
+ }
+ 
+-if [ -z $vendor ]; then
++# Actually run them. Upstream defines both functions and calls neither, so no
++# card of any kind was ever enumerated and no module ever inserted -- the
++# script only logged the failure below and went on to the symlinks. Guarded on
++# $vendor because load_modules tests $device, which perform_enumeration sets.
++perform_enumeration
++if [ -n "$vendor" ]; then
++	load_modules
++else
+ 	/vendor/bin/log -t "wifiloader" -p e "WiFi auto card detection fail"
+ fi
+ 
+-- 
+2.43.0
+

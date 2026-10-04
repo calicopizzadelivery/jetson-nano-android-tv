@@ -53,6 +53,11 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PACKAGES += \
     JetsonTVKeyHandler
 
+# Wireless firmware, from Firmware/firmware.json via prebuilt_firmware.py.
+# A plain include for the same reason as the apps below: a build that skipped
+# that step must fail rather than quietly ship a radio that cannot start.
+include vendor/jetson-tv/Firmware/firmware.mk
+
 # Third-party apps, from PrebuiltApps/apps.json via prebuilt_apps.py, which
 # tree-local-changes.sh runs before every build. A plain include, not an
 # -include: a build that skipped that step must fail, not quietly ship

@@ -74,10 +74,23 @@ media stack, Dolby audio libs, and BCM4356/BCM4354 wifi+BT firmware). No adb
 device needed. Full hardware acceleration including Vulkan is available on T210 —
 unlike Xavier/Orin, which have no NVIDIA Android userspace.
 
-**Bluetooth: only BCM4356 works.** The tree ships `BCM4356A3.hcd` and
-`BCM4350C0.hcd` and nothing else. Buy a **BCM94356Z** (Lenovo FRU 00JT478),
-M.2 2230 Key E, WiFi 5 + BT 4.1. Do NOT buy the Intel AC8265 (the card everyone
-sells for the Nano — unsupported) or RTL8822CE (tested, does not work).
+**Wi-Fi works on an Intel 8265 as of 2026-10-04**, and the old advice here —
+"do NOT buy the Intel AC8265, unsupported" — was wrong. `iwlwifi` was already
+in the kernel source naming the card; what was missing was `CONFIG_MAC80211`,
+the firmware, and a loader that ran. **`docs/wireless.md`** has all of it,
+including the five defects in NVIDIA's bring-up that had to be fixed first and
+the two things that mislead while debugging it. The shortest version:
+`wifi_loader.sh` defines `perform_enumeration()` and `load_modules()` and
+calls neither, upstream included, so that path had never executed on any
+board — which is why four more defects were hiding behind it.
+
+**Bluetooth is still only proven on paper, and only for BCM4356.** The tree
+ships `BCM4356A3.hcd` and `BCM4350C0.hcd` and nothing else, so a **BCM94356Z**
+(Lenovo FRU 00JT478, M.2 2230 Key E) remains the card most likely to pair a
+remote without further work. The 8265's Bluetooth half brings up `hci0` and
+loads `ibt-12-16` firmware, but the HAL is denied an `AF_BLUETOOTH` socket;
+that is RAIL 1b and is probably a small sepolicy fix. RTL8822CE's "tested,
+does not work" was the `wifi_loader.sh` defects, not the card.
 
 **Hard blockers, do not waste time on these:**
 - HDCP is not implemented in NVIDIA's Tegra Linux driver and never will be.
@@ -104,6 +117,8 @@ scripts/in-container/*.sh  sync, extract, build, local-manifest, tree-local-chan
 scripts/in-container/local-manifest.xml   repo local manifest -> our forks
 scripts/in-container/AmbientDream/        the screensaver, mirrored into vendor/
 scripts/in-container/AirPlayReceiver/     the AirPlay receiver (hosts UxPlay), ditto
+scripts/in-container/prebuilt_firmware.py  fetch pinned wireless firmware into the image
+scripts/in-container/Firmware/firmware.json  what it fetches, and why each file
 scripts/probe.sh           read-only host probe → probe-output.txt
 .devcontainer/             VS Code attach config
 ```
@@ -448,17 +463,24 @@ almost certainly why "RTL8822CE tested, does not work" is in this file's
 history. Now fixed, with detection for Realtek PCIe (`0x10ec`) and an insmod
 branch for `10ec:c822`.
 
-Neither can be *proven* until a radio is fitted. **RTL8822CE is the card to
-buy** for quantity: the driver is already in-tree, the cards are ~$8-12 and
-ubiquitous, and it is M.2 2230 Key E. **But for Bluetooth (remotes) it is
-not ready:** the image has no Realtek Bluetooth firmware. See RAIL 3. SHIELD
-remotes are already supported in the image (key layouts and NVIDIA's
-`hid-jarvis-remote` driver, RAIL 2). BCM4356 remains the only chip with wifi
-firmware in the image (`brcmfmac4356-pcie.bin`), but eBay has ~3 listings.
+Both are commits on our forks now, not patches. **The wifi half turned out to
+be the smaller of the defects in that script** — see `docs/wireless.md`, which
+supersedes this paragraph: the two functions it fixes are never called in the
+first place, and three more defects were hiding behind that. Wi-Fi is working
+on an Intel 8265 as of 2026-10-04.
+
+**RTL8822CE is still the card to buy for quantity** — the driver is in-tree,
+the cards are ~$8-12 and ubiquitous, M.2 2230 Key E — but its branch has
+still never run, and **for Bluetooth it is not ready**: the image has no
+Realtek Bluetooth firmware (RAIL 3). SHIELD remotes are already supported in
+the image (key layouts and NVIDIA's `hid-jarvis-remote` driver, RAIL 2), and
+BCM4356 remains the only chip whose Bluetooth firmware ships, so a BCM94356Z
+is the fastest route to a paired remote (RAIL 1a).
 
 Remaining:
 
-1. Verify on-device once a radio is fitted: BLE remote pairing and wifi.
+1. ~~Verify wifi on-device.~~ Done 2026-10-04 on an Intel 8265;
+   `docs/wireless.md`. BLE remote pairing is still open (RAIL 1b, 2).
 2. HDMI audio passthrough — the MS2109 presents an ALSA *capture* device
    (`card 2: MS2109`, S16_LE 48 kHz stereo), so `arecord -D hw:MS2109,0` is a
    real test. It only receives 2-channel LPCM, so it cannot validate
@@ -477,6 +499,14 @@ Sunshine on thebe, measured by reading a clock strip back off HDMI:
 70% of 400% CPU. The harness is in `scripts/gamestream/`, results and traps
 in `docs/game-streaming.md`. thebe's rootless capture (Xephyr and XShm)
 limits 4K; test 4K against a real gaming PC.
+
+**Wireless firmware is pinned the same way as the apps**, in
+`scripts/in-container/Firmware/firmware.json`: `prebuilt_firmware.py` fetches
+each file into `/dlcache` on every build, checks the sha256, and generates the
+`PRODUCT_COPY_FILES` that put it in `/vendor/firmware`. Nothing binary is
+committed. It is pinned to a linux-firmware **tag**, not `main`, because this
+4.9 kernel asks for 8265 ucode API 22-26 by exact filename and `main` carries
+only 34 and 36. See `docs/wireless.md`.
 
 **Third-party apps are pinned in `scripts/in-container/PrebuiltApps/apps.json`**
 (Moonlight, Kodi, Lemuroid and Jellyfin today). `prebuilt_apps.py` fetches them into `/dlcache` on

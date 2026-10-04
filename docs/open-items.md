@@ -6,15 +6,41 @@ move its result into that document and strike it here.
 
 Last reviewed 4 October 2026.
 
-## Waiting on the Wi-Fi/Bluetooth radio
+## Wi-Fi and Bluetooth
 
-The bench has no M.2 Key E card. RTL8822CE is the card to buy for quantity;
-BCM94356Z is the only chip whose Bluetooth firmware the image ships.
+An **Intel Wireless-AC 8265** is fitted as of 4 October, and **Wi-Fi works**:
+cold boot, firmware loads, `wlan0` scans both bands, and the picker in
+Settings lists real access points. Everything about how, and the five defects
+in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 
-1. **Wi-Fi.** Both `wifi_loader.sh` fixes are untested: modules loaded from
-   `/vendor/lib/modules`, and Realtek PCIe (`10ec:c822`) detection. Check that
-   the module loads, the interface scans, it connects on 5 GHz, and what the
-   throughput is. See `patches/README.md`, tegra-common/0001.
+1. ~~**Wi-Fi.**~~ *Closed 4 October.* Still open underneath it:
+   - **Associate and measure.** Nothing has joined a network yet — it needs a
+     passphrase. Check 5 GHz, then throughput, then game streaming over it
+     (item 22).
+   - **A Broadcom and a Realtek card have still never been tried.** Only the
+     Intel branch of `wifi_loader.sh` has run. See items 1a and 3.
+   - **Fix `lkm_loader_target.sh` properly.** It loads Cypress's stack on
+     every boot keyed on the device tree, not on a card being present, and
+     `cy_cfg80211` then owns `cfg80211`'s symbols so no SoftMAC driver can
+     load. `wifi_loader.sh` unloads it again, which works but is backwards.
+     The file is in `device/nvidia/foster`, which is **not one of our forks** —
+     so this costs a thirteenth fork, or a way to override one file from
+     porg. Worth doing before any second card is tested.
+1a. **Test the Broadcom cards when they arrive.** BCM94356Z (`14e4:43ec`) is
+   the only chip whose Bluetooth firmware the image already ships
+   (`brcmfmac4356-pcie.bin`, `BCM4356A3.hcd`), so it is the card that should
+   make a SHIELD remote pair without any further firmware work — which is the
+   fastest route to item 2. Check: that `perform_enumeration` reports
+   `0x14e4`, that the Broadcom branch of `load_modules` picks the right
+   module for the device id, that the Cypress stack this time is *kept* rather
+   than unloaded, and that Bluetooth comes up where Intel's does not. Then
+   compare 5 GHz throughput against the 8265.
+1b. **Bluetooth on the Intel 8265.** `hci0` exists and `ibt-12-16` firmware
+   loads, but the HAL is denied an `AF_BLUETOOTH` socket
+   (`hal_bluetooth_default ... tclass=socket`): porg uses the generic
+   `btlinux` HAL over a socket, while NVIDIA's policy only anticipated a
+   UART. Probably a small sepolicy addition. Worth doing out of order,
+   because it would answer item 2 without waiting for another card.
 2. **BLE remote pairing.** `CONFIG_BT_LE` is in the kernel now
    (`kernel/0001`), but no remote has paired yet. This also decides whether
    the setup wizard's accessory step can be completed with a real remote.
@@ -47,9 +73,9 @@ BCM94356Z is the only chip whose Bluetooth firmware the image ships.
    about 660 KB of tombstone plus dropbox copies. It should stop once a
    controller answers. Decide what a box with no radio does: probably keep
    Bluetooth disabled rather than crash-loop. See `docs/emmc-writes.md`.
-6. **Miracast sink**, for Windows and Android senders. It needs Wi-Fi Direct,
-   so nothing can start until the radio works. See
-   `docs/streaming-targets.md`.
+6. **Miracast sink**, for Windows and Android senders. It needs Wi-Fi
+   Direct; the 8265 advertises a `P2P-device` interface, so this is now
+   startable. See `docs/streaming-targets.md`.
 
 ## Waiting on Apple hardware
 
@@ -152,6 +178,15 @@ receiver, our key handler, or porg policy, and are ours to keep.
 - **`tegra-common/0001`, the path half only.** Loading modules from
   `/vendor/lib/modules` is unambiguous. **Do not send the Realtek half**: no
   radio has ever run it. Split the commit before offering it.
+- **`kernel/0003` — build mac80211 and iwlwifi.** The only one of the wireless
+  patches that is tested on hardware and needs no splitting.
+- **`tegra-common/0002` — wifi_loader never ran its own code.** The headline
+  is that `perform_enumeration()` and `load_modules()` are defined and neither
+  is called, on any board, so this path has demonstrably never executed. Split
+  off the Intel branch and the Cypress unload; the latter is a workaround for
+  a bug in `foster/initfiles/lkm_loader_target.sh` and should go as a report
+  instead. `porg/0007` goes with it, and belongs in
+  `device/nvidia/sepolicy` rather than porg.
 
 **To UxPlay** (<https://github.com/FDH2/UxPlay>) — the most useful thing here
 to anyone else, and nothing to do with Android:

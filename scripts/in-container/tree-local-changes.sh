@@ -166,6 +166,12 @@ install_keyhandler() {
     return 0
 }
 
+# Wireless firmware for radios the tree can drive but ships nothing for, from
+# Firmware/firmware.json. Fetched into /dlcache and checked, never committed.
+install_firmware() {
+    SRC="${SRC}" DLCACHE="${DLCACHE:-/dlcache}" python3 /opt/jetson-tv/prebuilt_firmware.py
+}
+
 # The product makefile that puts AmbientDream in the image. Lives beside the
 # app rather than in device/nvidia/porg so that porg's own tree carries only an
 # inherit-product-if-exists and still builds without us.
@@ -198,6 +204,7 @@ install_airplay_receiver
 install_branding
 install_input
 install_keyhandler
+install_firmware
 install_prebuilt_apps
 install_vendor_mk
 note "done"

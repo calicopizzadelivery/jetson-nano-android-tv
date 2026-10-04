@@ -330,6 +330,55 @@ advertised but undriven. The Home button is mapped to HOME and needed an
 unrelated fix first: see CLAUDE.md on `tv_user_setup_complete`. Upstreamable only in the sense that it
 is upstream already: this is for kernels older than those commits.
 
+
+## kernel/0003 — build mac80211 and iwlwifi
+
+Every radio this tree knew about was FullMAC, so `CONFIG_MAC80211` was never
+set in any tegra defconfig and **no SoftMAC driver could be built at all**.
+`iwlwifi` was already in the kernel source, naming the 8265 explicitly; only
+the config was missing. Verified on hardware: an Intel 8265 scans both bands
+through Android's own stack. `mac80211` is a module to match `cfg80211`,
+which has to stay modular on this board.
+
+**Status: ready, and tested on hardware.** The least contentious of the three
+wireless patches.
+
+## tegra-common/0002 — wifi_loader never ran its own code
+
+`perform_enumeration()` and `load_modules()` are defined and **neither is
+called**, so no card of any kind was ever enumerated and no module ever
+inserted; the script logged `WiFi auto card detection fail` and went on to the
+symlinks. This calls them, and adds an Intel Wireless-AC branch.
+
+It also unloads Cypress's stack first, because
+`foster/initfiles/lkm_loader_target.sh` loads it on every boot keyed on the
+device tree rather than on a card being present, and `cy_cfg80211` exports
+`cfg80211`'s symbols — so the kernel's own `cfg80211` is refused and no
+SoftMAC driver can load on this board whatever is fitted.
+
+**Status: split it before sending.** Three separable claims:
+
+1. *Call the functions.* Unambiguous, and the headline: this path has
+   demonstrably never executed anywhere.
+2. *An Intel branch.* Tested here, but it is a new feature for a card NVIDIA
+   never shipped.
+3. *The Cypress unload.* A workaround in the wrong file. The honest fix is to
+   gate the Broadcom branch in `lkm_loader_target.sh` on a Broadcom card
+   being on the bus. Offer it as a bug report, not as this patch.
+
+## porg/0007 — let wifi_loader enumerate and load
+
+Two sepolicy denials that only appear once the enumeration above is actually
+called: the domain had no `read` on `sysfs:dir`, so the glob over
+`/sys/bus/pci/devices/*` never expanded; and `module_load` was granted on
+`system_file` while every module it inserts is `vendor_file`.
+
+**Status: send with tegra-common/0002.** On its own it fixes nothing, because
+nothing reaches the denials. Both of these belong in
+`device/nvidia/sepolicy`'s `wifi_loader.te` rather than in porg — that is
+where a maintainer would want them; they are in porg here only because that
+repository is not one we fork.
+
 ## Catapult/0004 — make the audio output tile a picker
 
 The tile reported the live output and then opened Sound settings, which on this

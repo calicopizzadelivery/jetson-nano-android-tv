@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "Wireless firmware the image ships for cards the tree can drive but has no",
+    "firmware for. prebuilt_firmware.py fetches each file into /dlcache, checks",
+    "the sha256, and stages it under vendor/jetson-tv/Firmware. Nothing binary",
+    "is committed to this repo, the same arrangement as PrebuiltApps.",
+    "",
+    "Pinned to a linux-firmware tag, not to main: the kernel here is 4.9, whose",
+    "iwlwifi accepts 8265 ucode API 22 to 26 and asks for those filenames",
+    "exactly. main carries only 34 and 36 now, which this driver would never",
+    "ask for. Do not 'update' these to newer files without first checking",
+    "IWL8265_UCODE_API_MIN/MAX in drivers/net/wireless/intel/iwlwifi/iwl-8000.c.",
+    "",
+    "These are Intel's binaries, redistributable under the licence shipped with",
+    "them; they are firmware, not software linked into anything, so no source",
+    "obligation follows. See docs/source-release.md."
+  ],
+  "source": "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git",
+  "tag": "20220411",
+  "files": [
+    {
+      "name": "iwlwifi-8265-22.ucode",
+      "path": "iwlwifi-8265-22.ucode",
+      "dest": "",
+      "sha256": "3bb830694ae4334559f601eaa1ca37096c655c7dbbdef7c68cfb47af8c9364a7",
+      "why": "Wi-Fi for Intel Wireless-AC 8260/8265 (8265NGW), driven by iwlmvm."
+    },
+    {
+      "name": "ibt-12-16.sfi",
+      "path": "intel/ibt-12-16.sfi",
+      "dest": "intel",
+      "sha256": "75b8b8cc10abd616a96066bce9ce62be80ebc293d6a4e9a0a11c3ecc5d3ca373",
+      "why": "Bluetooth for the same card: its BT half is a USB device, btusb/btintel."
+    },
+    {
+      "name": "ibt-12-16.ddc",
+      "path": "intel/ibt-12-16.ddc",
+      "dest": "intel",
+      "sha256": "3ca252ad20e8f76d6d906536bf9e5abe6654c657183584a48e90a0dcf40ac4d5",
+      "why": "Device configuration loaded alongside ibt-12-16.sfi."
+    }
+  ]
+}

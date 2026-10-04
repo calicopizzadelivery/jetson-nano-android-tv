@@ -1,0 +1,83 @@
+From ccf807576cf011f7e3c77b7f548b1a02dc6acfee Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 12:21:37 -0500
+Subject: [PATCH] porg: let wifi_loader enumerate and load
+
+Two denials, both of which only appear once wifi_loader.sh's enumeration is
+actually called:
+
+  - /sys/bus/{pci,sdio}/devices are plain sysfs, and the domain had no read
+    on sysfs:dir, so the glob never expanded and $vendor stayed empty. The
+    vendor/device nodes inside are already labelled sysfs_pci_device and
+    readable; it was only the listing that was missing.
+
+  - module_load is granted on system_file, but every module the script
+    insmods lives in /vendor/lib/modules, which is vendor_file.
+
+Plus read on /proc/modules, for the lsmod the Intel branch uses to see
+whether the Cypress stack is still holding cfg80211's symbols.
+
+Kept in porg rather than device/nvidia/sepolicy because that repository is
+LineageOS's.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I16ca198bf11e4138e3b3c2c6f5cc5e0ca435b09c
+---
+ BoardConfig.mk                 |  4 ++++
+ sepolicy/vendor/wifi_loader.te | 29 +++++++++++++++++++++++++++++
+ 2 files changed, 33 insertions(+)
+ create mode 100644 sepolicy/vendor/wifi_loader.te
+
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 8e2e8d3..cde351b 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -21,6 +21,10 @@ include device/nvidia/foster/BoardConfig.mk
+ # porg feature.
+ SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += device/nvidia/porg/sepolicy/private
+ 
++# Read permission for the sysfs directories wifi_loader enumerates cards
++# from; see the file for why upstream's enumeration could never have worked.
++BOARD_VENDOR_SEPOLICY_DIRS += device/nvidia/porg/sepolicy/vendor
++
+ # ...and its uid; see config.fs for why it needs one of its own.
+ TARGET_FS_CONFIG_GEN += device/nvidia/porg/config.fs
+ 
+diff --git a/sepolicy/vendor/wifi_loader.te b/sepolicy/vendor/wifi_loader.te
+new file mode 100644
+index 0000000..725bc8c
+--- /dev/null
++++ b/sepolicy/vendor/wifi_loader.te
+@@ -0,0 +1,29 @@
++# Let wifi_loader list the two directories it enumerates cards from.
++#
++# perform_enumeration() in tegra-common's wifi_loader.sh globs
++# /sys/bus/sdio/devices/* and /sys/bus/pci/devices/*. The entries inside are
++# symlinks into /sys/devices, and the vendor/device nodes they point at are
++# already labelled sysfs_pci_device, which upstream's wifi_loader.te can read.
++# The two bus directories themselves are plain sysfs, and this domain had no
++# read on sysfs:dir -- so the glob never expanded, $vendor stayed empty, and
++# the function returned "WiFi card is not available" on any board, with any
++# card fitted. It was never noticed because upstream calls neither function in
++# that script; we do (see the fork of wifi_loader.sh).
++#
++# Read-only, and only what the glob needs: list the directory, follow the
++# symlink. The vendor and device files themselves are covered upstream.
++allow wifi_loader sysfs:dir r_dir_perms;
++allow wifi_loader sysfs:lnk_file read;
++
++# Let it load the modules it ships.
++#
++# Upstream's wifi_loader.te grants `system_file:system module_load` only, but
++# every module this script insmods lives in /vendor/lib/modules, which is
++# vendor_file -- so every insmod in load_modules() was denied. Same root cause
++# as the rule above: the function has never run, on any board, so nothing ever
++# tripped over it.
++allow wifi_loader vendor_file:system module_load;
++
++# lsmod, which the Intel branch uses to see whether the Cypress stack is
++# squatting on cfg80211's symbols before it unloads it.
++allow wifi_loader proc_modules:file r_file_perms;
+-- 
+2.43.0
+
