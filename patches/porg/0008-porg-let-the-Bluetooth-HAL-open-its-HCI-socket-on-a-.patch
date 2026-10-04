@@ -1,0 +1,57 @@
+From fefcebba89c2842b2db72f4e7a4247782fc8131c Mon Sep 17 00:00:00 2001
+From: Phil <300208363+calicopizzadelivery@users.noreply.github.com>
+Date: Sun, 4 Oct 2026 12:48:09 -0500
+Subject: [PATCH] porg: let the Bluetooth HAL open its HCI socket on a 4.9
+ kernel
+
+The AIDL default HAL talks to the kernel over AF_BLUETOOTH, and porg selects
+it (TARGET_TEGRA_BT := btlinux). AOSP grants that as self:bluetooth_socket --
+a class that only exists from Linux 4.13, where da69a5306ab9 gave every
+address family its own security class. This kernel is 4.9, so AF_BLUETOOTH
+falls to the generic self:socket, the rule upstream wrote is never consulted,
+and the HAL cannot start.
+
+hal_bluetooth_btlinux, which uses the same transport, carries both lines for
+exactly this reason. hal_bluetooth_default was only ever given the new one.
+Same permissions as btlinux, no more.
+
+With it, hci0 opens and the adapter reaches state ON.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Change-Id: I3c66cdee7461dd181bc6f59825722723e99e2f64
+---
+ sepolicy/vendor/hal_bluetooth_default.te | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+ create mode 100644 sepolicy/vendor/hal_bluetooth_default.te
+
+diff --git a/sepolicy/vendor/hal_bluetooth_default.te b/sepolicy/vendor/hal_bluetooth_default.te
+new file mode 100644
+index 0000000..a7252d8
+--- /dev/null
++++ b/sepolicy/vendor/hal_bluetooth_default.te
+@@ -0,0 +1,22 @@
++# Let the Bluetooth HAL open its HCI socket on a 4.9 kernel.
++#
++# The AIDL default HAL talks to the kernel over AF_BLUETOOTH:
++# net_bluetooth_mgmt.cpp does socket(PF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI),
++# bind, read, write. porg selects it (TARGET_TEGRA_BT := btlinux), and the
++# .rc already grants NET_ADMIN, so nothing else is missing.
++#
++# AOSP's own policy grants it as self:bluetooth_socket -- a class that only
++# exists from Linux 4.13, where commit da69a5306ab9 gave every address family
++# its own security class. This kernel is 4.9, so its classmap has no entry for
++# AF_BLUETOOTH and the access arrives as the generic self:socket instead:
++#
++#   avc: denied { create } for comm="android.hardwar" tclass=socket
++#        scontext=u:r:hal_bluetooth_default:s0
++#
++# so the rule upstream wrote is simply never consulted and the HAL cannot
++# start. hal_bluetooth_btlinux -- the other HAL that uses the same transport --
++# carries *both* lines for exactly this reason; hal_bluetooth_default was only
++# ever given the new one. Same permissions as btlinux, no more.
++#
++# This belongs in AOSP's system/sepolicy/vendor/hal_bluetooth_default.te.
++allow hal_bluetooth_default self:socket { create bind read write };
+-- 
+2.43.0
+

@@ -35,12 +35,12 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    module for the device id, that the Cypress stack this time is *kept* rather
    than unloaded, and that Bluetooth comes up where Intel's does not. Then
    compare 5 GHz throughput against the 8265.
-1b. **Bluetooth on the Intel 8265.** `hci0` exists and `ibt-12-16` firmware
-   loads, but the HAL is denied an `AF_BLUETOOTH` socket
-   (`hal_bluetooth_default ... tclass=socket`): porg uses the generic
-   `btlinux` HAL over a socket, while NVIDIA's policy only anticipated a
-   UART. Probably a small sepolicy addition. Worth doing out of order,
-   because it would answer item 2 without waiting for another card.
+1b. ~~**Bluetooth on the Intel 8265.**~~ *Closed 4 October.* The adapter
+   reaches ON at boot. One sepolicy line: AOSP grants the HAL
+   `self:bluetooth_socket`, a class that only exists from Linux 4.13, so on
+   this 4.9 kernel the access arrived as generic `self:socket` and the rule
+   was never consulted. `docs/wireless.md`. This also closes item 5 — the
+   Bluetooth crash loop was the HAL failing to start, not the absent radio.
 2. **BLE remote pairing.** `CONFIG_BT_LE` is in the kernel now
    (`kernel/0001`), but no remote has paired yet. This also decides whether
    the setup wizard's accessory step can be completed with a real remote.

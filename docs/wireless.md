@@ -1,7 +1,7 @@
 # Wi-Fi and Bluetooth on porg
 
-Status, 4 October 2026: **Wi-Fi works on an Intel Wireless-AC 8265**, from a
-cold boot, with no hand-holding. Android enumerates the card, loads the
+Status, 4 October 2026: **Wi-Fi and Bluetooth both work on an Intel
+Wireless-AC 8265**, from a cold boot, with no hand-holding. Android enumerates the card, loads the
 firmware, brings up `wlan0`, and scans both bands; the picker in Settings
 lists real access points. Associating to one has not been done — it needs a
 passphrase — and nothing has been measured for throughput.
@@ -156,31 +156,55 @@ Two things mislead while debugging this:
 
 ## Bluetooth
 
-The 8265's Bluetooth half is a USB device and comes up on its own: `btusb`
-binds it, `btintel` loads `ibt-12-16.sfi` and `.ddc` (both now shipped by the
-same firmware fetcher), and `hci0` exists.
+**Works, as of 4 October.** The adapter reaches state `ON` at boot, named
+JetsonTV, and `com.android.bluetooth` no longer crash-loops — the aborts that
+cost ~660 KB of tombstone per boot (`docs/emmc-writes.md`) were the HAL
+failing to start, not the missing radio.
+
+The 8265's Bluetooth half is a USB device: `btusb` binds it and `btintel`
+loads `ibt-12-16.sfi` and `.ddc`, both shipped by the same firmware fetcher.
 
     Bluetooth: hci0: Firmware revision 0.1 build 19 week 44 2021
 
-It is **not usable yet**. The Bluetooth HAL is denied a socket:
+One sepolicy line stood in the way, and it is an upstream bug worth knowing
+about on any pre-4.13 kernel. porg selects the AIDL **default** HAL
+(`TARGET_TEGRA_BT := btlinux`), which opens
+`socket(PF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)`. AOSP grants that as
+`self:bluetooth_socket` — a class that only exists from **Linux 4.13**, where
+`da69a5306ab9` gave every address family its own security class. This kernel
+is 4.9, its classmap has no AF_BLUETOOTH entry, so the access arrives as the
+generic `self:socket`:
 
     avc: denied { create } for comm="android.hardwar" tclass=socket
          scontext=u:r:hal_bluetooth_default:s0
 
-porg uses the generic `btlinux` HAL, which talks to the kernel over an
-`AF_BLUETOOTH` HCI socket. NVIDIA's own path is a UART, so vendor policy
-grants `hci_attach_dev` and no socket. Not yet fixed. See
-`docs/open-items.md`.
+The rule upstream wrote is simply never consulted. `hal_bluetooth_btlinux`,
+which uses the same transport, carries **both** lines for exactly this reason;
+`hal_bluetooth_default` was only ever given the new one. Ours is in
+`device/nvidia/porg/sepolicy/vendor/hal_bluetooth_default.te` and belongs
+upstream in `system/sepolicy/vendor/`.
 
-If it can be made to work it answers a question that has been open since this
-project started: whether BLE pairing works on ARM64 Tegra, and so whether the
-setup wizard's accessory step can ever be completed with a real remote.
+Two things to know:
+
+- **`/dev/rfkill` is still denied**, and that is fine. The HAL logs
+  `unable to open /dev/rfkill` and carries on — its return value is ignored —
+  because the file is labelled plain `device` and AOSP grants nothing for it.
+  It only costs the chip power-cycle on enable/disable.
+- **There are two Bluetooth rfkill nodes** and the useful one is `rfkill0`
+  (`name=hci0`, unblocked). `rfkill1` is `bluedroid_pm`, Tegra's on-board BT
+  power control, and is soft-blocked — irrelevant with a USB radio, but it
+  looks alarming if you read it first.
+
+Still untested: pairing anything. A BLE remote is the one that matters — it
+answers the question open since this project started, whether BLE pairing
+works on ARM64 Tegra, and whether the setup wizard's accessory step can ever
+be completed.
 
 ## Other cards
 
 | card | Wi-Fi | Bluetooth |
 | --- | --- | --- |
-| Intel 8265 (`8086:24fd`) | works | `hci0` up, HAL blocked |
+| Intel 8265 (`8086:24fd`) | works | works, adapter ON |
 | BCM94356Z (`14e4:43ec`) | firmware in image, untested | only chip whose BT firmware ships |
 | RTL8822CE (`10ec:c822`) | driver and loader branch in tree, untested | needs `rtl_bt/rtl8822cu_*` firmware |
 
