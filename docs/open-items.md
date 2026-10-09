@@ -47,17 +47,22 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    `uhid`, and drives the launcher. That settles the long-standing "BLE does
    not work on ARM64 Tegra" question, and confirms the kernel fork's
    `CONFIG_BT_LE` booted. `docs/wireless.md`. Still open underneath it:
-   - **A SHIELD remote specifically.** The image already carries support for
-     all three generations — key layouts for the 2015, 2017 and 2019 remotes
-     (`0955:7212`, `7213`, `7217`) and NVIDIA's `hid-jarvis-remote.ko`
-     (`hid-atv-jarvis.c`, which also turns the microphone into an ALSA capture
-     card). Pairing mode: hold Select until the light flashes; a remote paired
-     before needs Home + Back. Beyond the d-pad, check the 2019 remote's
-     Settings key (our framework config sends it to Settings, not the
-     launcher), its Netflix key (`BUTTON_4`, which nothing here handles),
-     volume (box volume, or the TV's over CEC), and whether the microphone
-     appears. Its IR blaster and remote finder need NVIDIA's own app, which we
-     do not have.
+   - ~~**A SHIELD remote specifically.**~~ *Done 8 October.* The 2019 remote
+     (`0955:7217`) bonded over BLE and `hid-jarvis-remote` bound to it. All
+     sixteen keys in `Vendor_0955_Product_7217.kl` fire, including the gear
+     key as `SETTINGS` and the Netflix key as `BUTTON_4` — the latter reaches
+     the kernel and nothing handles it, as predicted. `docs/wireless.md`.
+     Left over from it:
+     - **The microphone is not an ALSA capture card.** An earlier note here
+       claimed `hid-atv-jarvis` makes one; it does not. Android gives the
+       device a `MIC` class and the button reports `ASSIST`, but
+       `/proc/asound/cards` never gains an entry. Voice search is unproven,
+       and would need a different audio path.
+     - **Decide what `BUTTON_4` should do.** It is a free, labelled button on
+       every SHIELD remote. Obvious candidates: a configurable app launch, or
+       Jellyfin/Kodi.
+     - The 2015 and 2017 remotes (`7212`, `7213`) are still untested, as is
+       the IR blaster and remote finder, which need NVIDIA's own app.
    - **Complete the setup wizard for real.** The accessory step should now be
      satisfiable with a paired BLE controller instead of bypassed from the
      serial console. Worth doing once on a wiped device to confirm, since it

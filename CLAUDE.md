@@ -155,9 +155,14 @@ Design decisions worth preserving:
   **Confirmed working 2026-09-25** on a sku 2 / fab 400 module; see the
   flashing section above.
 - ~~Whether BLE (not just A2DP) works on 22.2.~~ **Answered 2026-10-08: it
-  works.** An Xbox Wireless Controller bonded over HID-over-GATT on an Intel
-  8265 and drives the UI. See `docs/wireless.md`. A SHIELD remote specifically
-  is still untested, and that is what RAIL 2 now tracks.
+  works.** An Xbox Wireless Controller and a 2019 SHIELD remote both bonded
+  over HID-over-GATT on an Intel 8265. NVIDIA's `hid-jarvis-remote` binds to
+  the remote and all sixteen keys of its bespoke layout fire. See
+  `docs/wireless.md`, which also records the one trap: a remote that is
+  *discoverable* is not necessarily *connectable*, and `AddAccessoryActivity`
+  waits 5 s before calling `createBond`, which is long enough for a sleepy
+  remote to miss the window. The remote's **microphone is not an ALSA capture
+  card**, contrary to earlier notes.
 
 ## Status
 

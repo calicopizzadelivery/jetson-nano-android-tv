@@ -238,6 +238,53 @@ No key layout of ours is needed: the image already ships
 8BitDo, so the Settings toggle for "gamepad button acts as Home" should apply
 to this pad too. **Not yet confirmed by a deliberate single press.**
 
+**A SHIELD remote pairs too, and NVIDIA's own driver binds to it.** The 2019
+remote (`0955:7217`) bonded over BLE on 8 October and `hid-jarvis-remote`
+claimed it — the first time that driver has had real hardware on this build:
+
+    Jarvis 0005: 0955:7217.0004: input,hidraw2:
+        BLUETOOTH HID v1.11 Gamepad [NVIDIA SHIELD Remote] on c8:09:a8:ff:0f:4f
+
+Android classifies it `KEYBOARD | DPAD | MIC | LIGHT | EXTERNAL` and uses the
+bespoke `/vendor/usr/keylayout/Vendor_0955_Product_7217.kl`. **All sixteen
+keys in that layout fire**, captured with `getevent -lt`:
+
+| key | evdev | Android keycode |
+| --- | --- | --- |
+| d-pad, select | `KEY_UP/DOWN/LEFT/RIGHT`, `KEY_SELECT` | `DPAD_*`, `DPAD_CENTER` (WAKE) |
+| back, home | `KEY_BACK`, `KEY_HOMEPAGE` | `BACK`, `HOME` |
+| gear | `KEY_MENU` (139) | `SETTINGS` |
+| microphone | `KEY_SEARCH` (217) | `ASSIST` (WAKE) |
+| Netflix | `KEY_VIDEO` (393) | `BUTTON_4` (WAKE) |
+| transport | `KEY_PLAYPAUSE`, `KEY_FASTFORWARD`, `KEY_REWIND` | `MEDIA_*` |
+| volume, power | `KEY_VOLUMEUP/DOWN`, `KEY_POWER` | `VOLUME_*`, `POWER` |
+
+Two of those were predicted and are now confirmed: the gear key is `SETTINGS`
+(so it opens Settings, not the launcher), and the Netflix key is `BUTTON_4`,
+which arrives at the kernel and which **nothing in this build handles**.
+
+**The microphone is not an ALSA capture device.** Earlier notes said
+`hid-atv-jarvis` exposes it as a capture card; it does not, at least here.
+`/proc/asound/cards` still lists only `tegrahda` and `APE` after pressing and
+holding the mic button, even though Android gives the device a `MIC` class and
+the button itself reports as `ASSIST`. The keypress works; the audio path is
+not exposed through ALSA. Treat voice search as unproven.
+
+**Pairing a remote has one trap worth knowing.** The first attempt failed:
+
+    OnLeConnectFail: Connection failed le remote:...07:5b
+    acl_ble_connection_fail: ... hci_status:HCI_ERR_HOST_TIMEOUT
+    BOND_BONDING => BOND_NONE
+
+The remote was **discoverable but not connectable** — it had advertised once
+and gone back to sleep, so it still appeared in the list while refusing the
+connection. `AddAccessoryActivity` also waits five seconds between logging
+`Starting pairing on <addr>` and actually calling `createBond`, which is
+enough for a sleepy remote to miss the window. Hold Back + Home until the
+light flashes and bond immediately. A sign you are hitting this: the entry
+loses its *name* in the list and shows only a bare address, because the
+cached name is discarded after the failed bond.
+
 **Discovery works** too, and found a TCL TV, a Samsung QLED and an NVIDIA
 device (OUI `00:04:4B`) advertising with a gamepad class. The adapter survived
 the bench USB hub being unplugged for 35 minutes without a reboot: the gadget
