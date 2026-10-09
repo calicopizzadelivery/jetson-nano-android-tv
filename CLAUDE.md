@@ -13,7 +13,11 @@ a codename for it; the carrier-board repo `mythtv-porg` is a separate project
 and keeps its name unless the user says otherwise. The name, the default
 wallpaper and how both are set are in `docs/branding.md`.
 
-Long-term: possibly extend to Jetson Orin (AGX / NX / Nano). Deferred for now.
+Long-term: possibly extend to Jetson Orin (AGX / NX / Nano). Deferred, and
+note it shares Xavier's blocker below: no NVIDIA Android userspace exists for
+it either. Orin is only *less* hopeless because Ampere is eventually within
+Mesa's reach in a way Volta is not. **Xavier itself is closed** — see the
+hard blockers.
 
 ## Hardware
 
@@ -100,6 +104,21 @@ does not work" was the `wifi_loader.sh` defects, not the card.
   certificate is provisioned per-device by the licensed OEM. Use Plex Companion,
   Jellyfin, Kodi UPnP/DLNA or FCast instead.
 - Tegra X1's NVDEC has no AV1 decode. H.264/HEVC/VP9/VP8/MPEG-2/VC-1 only.
+- **Android on Jetson Xavier AGX (T194) is closed as a line of enquiry**
+  (decided 2026-10-09). Nothing was ever reverse engineered for porg: the
+  Nano works because every SHIELD Android TV is the same T210 family, so
+  NVIDIA's own *Android* userspace ships in SHIELD OTAs and we just download
+  it. NVIDIA never shipped an Android product on T194, so there is no OTA to
+  harvest. The L4T blobs cannot substitute: they are glibc, Android is
+  bionic, and a GPU user-mode driver is welded to its window system (L4T
+  integrates with X11/Wayland/GBM; Android needs EGL over ANativeWindow and
+  gralloc, and that integration lives inside the closed driver). The
+  remaining option is writing an open Volta driver, which is Nouveau's scope
+  and fifteen years of work; Mesa's NVK needs Turing or newer, and nouveau's
+  Tegra support stops at GM20B (X1), one generation short. If someone wants
+  a Xavier as a media box, run **Linux** on it, where NVIDIA's own drivers
+  work. Do not reopen this without a new fact, and the only fact that would
+  matter is an Android T194 userspace surfacing from somewhere.
 
 ## What's in this repo
 
