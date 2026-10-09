@@ -41,20 +41,34 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    this 4.9 kernel the access arrived as generic `self:socket` and the rule
    was never consulted. `docs/wireless.md`. This also closes item 5 — the
    Bluetooth crash loop was the HAL failing to start, not the absent radio.
-2. **BLE remote pairing.** `CONFIG_BT_LE` is in the kernel now
-   (`kernel/0001`), but no remote has paired yet. This also decides whether
-   the setup wizard's accessory step can be completed with a real remote.
-   **Test with a SHIELD remote first:** the image already carries SHIELD's
-   support for all three. There are key layouts for the 2015, 2017 and 2019
-   remotes (`0955:7212`, `7213`, `7217`), and NVIDIA's driver for them,
-   `hid-jarvis-remote.ko` (`hid-atv-jarvis.c`, which also turns the
-   microphone into an ALSA capture card), loads at boot. Pairing mode: hold
-   Select until the light flashes; a remote paired before needs Home + Back.
-   Things to check beyond the d-pad: the 2019 remote's Settings key (which
-   our framework config sends to Settings, not the launcher), its Netflix
-   key (`BUTTON_4`, which nothing here handles), volume (box volume, or the
-   TV's over CEC), and whether the microphone shows up. Its IR blaster and
-   remote finder are set up from NVIDIA's own app, which we do not have.
+2. **BLE pairing works** — *answered 8 October.* An Xbox Wireless Controller
+   (`045E:0B13`) bonded over **HID over GATT** (`le_acl:true`,
+   `hogp_available:true`, `bredr_acl:false`), produced an input device through
+   `uhid`, and drives the launcher. That settles the long-standing "BLE does
+   not work on ARM64 Tegra" question, and confirms the kernel fork's
+   `CONFIG_BT_LE` booted. `docs/wireless.md`. Still open underneath it:
+   - **A SHIELD remote specifically.** The image already carries support for
+     all three generations — key layouts for the 2015, 2017 and 2019 remotes
+     (`0955:7212`, `7213`, `7217`) and NVIDIA's `hid-jarvis-remote.ko`
+     (`hid-atv-jarvis.c`, which also turns the microphone into an ALSA capture
+     card). Pairing mode: hold Select until the light flashes; a remote paired
+     before needs Home + Back. Beyond the d-pad, check the 2019 remote's
+     Settings key (our framework config sends it to Settings, not the
+     launcher), its Netflix key (`BUTTON_4`, which nothing here handles),
+     volume (box volume, or the TV's over CEC), and whether the microphone
+     appears. Its IR blaster and remote finder need NVIDIA's own app, which we
+     do not have.
+   - **Complete the setup wizard for real.** The accessory step should now be
+     satisfiable with a paired BLE controller instead of bypassed from the
+     serial console. Worth doing once on a wiped device to confirm, since it
+     is how a real user would first meet this box.
+   - **The Xbox button as Home.** `Vendor_045e_Product_0b13.kl` maps it to
+     `BUTTON_MODE`, the keycode our `GamepadKeyHandler` intercepts, so the
+     Settings toggle ought to work for this pad too. Needs one deliberate
+     press to confirm.
+   - **Rumble over BLE.** Unproven, and `bta_hh_co` logs
+     `Invalid event from internal uhid-dev: 115` repeatedly, which is likely
+     the output report. See `docs/wireless.md`.
 3. **Bluetooth on an RTL8822CE.** Its Bluetooth half is on USB and needs
    Realtek firmware. Looked at 1 October: porg uses the generic `btlinux`
    HAL, which drives whatever the kernel's `btusb` brings up, and the image

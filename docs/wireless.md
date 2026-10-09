@@ -1,7 +1,8 @@
 # Wi-Fi and Bluetooth on porg
 
-Status, 4 October 2026: **Wi-Fi and Bluetooth both work on an Intel
-Wireless-AC 8265**, from a cold boot, with no hand-holding. Android enumerates the card, loads the
+Status, 8 October 2026: **Wi-Fi and Bluetooth both work on an Intel
+Wireless-AC 8265**, from a cold boot, with no hand-holding, and a BLE
+controller pairs and drives the UI. Android enumerates the card, loads the
 firmware, brings up `wlan0`, and scans both bands; the picker in Settings
 lists real access points. Associating to one has not been done — it needs a
 passphrase — and nothing has been measured for throughput.
@@ -195,23 +196,69 @@ Two things to know:
   power control, and is soft-blocked — irrelevant with a USB radio, but it
   looks alarming if you read it first.
 
-**Discovery works.** The accessory screen
-(`com.android.tv.settings/.accessories.AddAccessoryActivity`) runs a full
-inquiry cycle and lists real devices in range — a TCL TV, a Samsung QLED, and
-an NVIDIA device (OUI `00:04:4B`) advertising with a gamepad class. The
-adapter also survived the bench USB hub being unplugged for 35 minutes
-without a reboot: the gadget dropped, the radio did not.
+**Pairing works, over BLE.** An Xbox Wireless Controller (Series X|S,
+`045E:0B13`) bonded on 8 October and produced a working Android input device.
+This is the answer to the question that had been open since this project
+started — whether BLE works on ARM64 Tegra — and it is yes:
 
-Worth noting from that screen: launched directly it says **"Press Back to skip
-this step"**. The captive version that blocks the setup wizard is captive only
-because the wizard passes `no_input_mode=true` — see the setup-wizard notes in
-`CLAUDE.md`.
+    BluetoothBondStateMachine: BOND_BONDING => BOND_BONDED
+    btif_hh_transport_select: [BT_TRANSPORT_LE], bredr_acl:false,
+        le_acl:true, hogp_available:true, le_preferred:true
+    HidHostService: broadcastConnectionState: ... newState=2
+    input: Xbox Wireless Controller as
+        /devices/virtual/misc/uhid/0005:045E:0B13.0003/input/input5
 
-Still untested: **pairing anything**. That is the last unproven step, and a
-BLE remote or controller is the one that matters — it answers the question
-open since this project started, whether BLE pairing works on ARM64 Tegra, and
-whether the setup wizard's accessory step can ever be completed. Bonded
-devices list is empty so far.
+Note `bredr_acl:false` and `hogp_available:true`: this is **HID over GATT**,
+the Bluetooth Low Energy path, not classic HID. The bond is listed `[ LE ]`.
+Android classifies the result `KEYBOARD | GAMEPAD | JOYSTICK | LIGHT |
+EXTERNAL` as controller 1 on `/dev/input/event5`, and it drives the launcher
+and opens apps.
+
+Everything the BLE HID path needs was already in place and is worth checking
+first if it ever stops working: `/dev/uhid` exists and is labelled
+`uhid_device`, and the **running** kernel (not just the defconfig — read
+`/proc/config.gz`) has `CONFIG_UHID=y`, `CONFIG_BT_HIDP=y` and
+`CONFIG_BT_LE=y`. That last one is our kernel fork's commit, so this also
+confirms it booted.
+
+Every control reported, captured with `getevent -lt`:
+
+| | |
+| --- | --- |
+| face | `BTN_GAMEPAD` (A), `BTN_EAST` (B), `BTN_WEST` (X), `BTN_NORTH` (Y) |
+| shoulders | `BTN_TL`, `BTN_TR` |
+| system | `BTN_SELECT`, `BTN_START`, `BTN_MODE` (Xbox), `KEY_RECORD` (Share) |
+| sticks | `ABS_X`/`ABS_Y`, `ABS_Z`/`ABS_RZ` |
+| triggers | `ABS_GAS`/`ABS_BRAKE` |
+| d-pad | `ABS_HAT0X`/`ABS_HAT0Y` |
+
+No key layout of ours is needed: the image already ships
+`/vendor/usr/keylayout/Vendor_045e_Product_0b13.kl`, which maps `316` to
+`BUTTON_MODE` — the same keycode our `GamepadKeyHandler` intercepts for the
+8BitDo, so the Settings toggle for "gamepad button acts as Home" should apply
+to this pad too. **Not yet confirmed by a deliberate single press.**
+
+**Discovery works** too, and found a TCL TV, a Samsung QLED and an NVIDIA
+device (OUI `00:04:4B`) advertising with a gamepad class. The adapter survived
+the bench USB hub being unplugged for 35 minutes without a reboot: the gadget
+dropped, the radio did not.
+
+Worth knowing from that screen: launched directly it says **"Press Back to
+skip this step"**. The captive version that blocks the setup wizard is captive
+only because the wizard passes `no_input_mode=true` — see the setup-wizard
+notes in `CLAUDE.md`. Now that a BLE controller pairs, that step should be
+completable for real rather than bypassed.
+
+Two loose ends from the pairing session:
+
+- **`uhid_read_inbound_event: Invalid event from internal uhid-dev: 115`**,
+  repeatedly, from `bta_hh_co`. Android's uhid reader does not recognise that
+  event type. Most likely an output report — LED or rumble — so **force
+  feedback over BLE is unproven**. Chase this only if rumble turns out dead.
+- **`btm_sec_rmt_name_request_complete ... HCI_ERR_PAGE_TIMEOUT`** on a
+  *different* address, every ~20 s during discovery. The stack found something
+  over LE and then tried to read its name over BR/EDR, which an LE-only device
+  will never answer. Noise, but it makes the log look broken when it is not.
 
 ## Other cards
 

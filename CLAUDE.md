@@ -154,8 +154,10 @@ Design decisions worth preserving:
 - ~~Whether `p3450.sh` SKU-2 detection works on a production eMMC module.~~
   **Confirmed working 2026-09-25** on a sku 2 / fab 400 module; see the
   flashing section above.
-- Whether BLE (not just A2DP) works on 22.2. BLE was among the issues that held
-  back 19.1/20 on ARM64 Tegra. Test remote pairing early.
+- ~~Whether BLE (not just A2DP) works on 22.2.~~ **Answered 2026-10-08: it
+  works.** An Xbox Wireless Controller bonded over HID-over-GATT on an Intel
+  8265 and drives the UI. See `docs/wireless.md`. A SHIELD remote specifically
+  is still untested, and that is what RAIL 2 now tracks.
 
 ## Status
 
