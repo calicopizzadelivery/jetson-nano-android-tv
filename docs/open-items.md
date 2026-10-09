@@ -63,10 +63,20 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
        Jellyfin/Kodi.
      - The 2015 and 2017 remotes (`7212`, `7213`) are still untested, as is
        the IR blaster and remote finder, which need NVIDIA's own app.
-   - **Complete the setup wizard for real.** The accessory step should now be
-     satisfiable with a paired BLE controller instead of bypassed from the
-     serial console. Worth doing once on a wiped device to confirm, since it
-     is how a real user would first meet this box.
+   - ~~**Complete the setup wizard for real.**~~ *Done 8 October.* On a
+     genuine first boot after `cmd recovery wipe ext4`, the accessory step
+     paired the SHIELD remote by itself in 42 seconds and advanced, with no
+     key pressed. The wizard set `tv_user_setup_complete` itself and is not
+     left disabled. It was never inherently captive; it was captive because
+     there was no radio. Full detail and the recovery procedure are in
+     `CLAUDE.md`. Two things that came out of it:
+     - **A factory reset turns adb off** (`adb_enabled` is in `/data`). The
+       serial console is the way back: `/dev/ttyUSB0`, uid 2000, no login,
+       `settings put global adb_enabled 1`, then accept the RSA prompt on the
+       TV with the HID injector.
+     - **Our Settings.Secure defaults survive a wipe**, because they are code
+       defaults rather than stored values: the Netflix key still launched
+       Kodi on the freshly reset device with `jetsontv_button4_package` null.
    - **The Xbox button as Home.** `Vendor_045e_Product_0b13.kl` maps it to
      `BUTTON_MODE`, the keycode our `GamepadKeyHandler` intercepts, so the
      Settings toggle ought to work for this pad too. Needs one deliberate

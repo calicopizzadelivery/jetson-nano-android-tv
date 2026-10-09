@@ -375,35 +375,41 @@ build, so `/dev/ttyUSB0` gives a `console:/ $` prompt as uid 2000 with no
 login. It is the way in when adb is not yet available, and it is what got the
 device past first boot.
 
-**The setup wizard cannot be completed on this bench.** Its "Searching for
-accessories" step waits for a BLE remote and ignores every key, so with no
-radio fitted it never advances — the HID injector is irrelevant there, and
-Android does see it (`dumpsys input` lists the injector as a full keyboard).
-Bypass it from the serial console:
+**The setup wizard CAN be completed, as of 2026-10-08.** It was never
+inherently captive: it was captive because there was no radio. With a working
+BLE radio and a remote in pairing mode, the accessory step pairs it and
+advances by itself. Demonstrated on a genuine first boot after a factory
+reset (`cmd recovery wipe ext4`):
 
-    settings put global device_provisioned 1
-    settings put secure user_setup_complete 1
-    settings put secure tv_user_setup_complete 1
-    settings put global adb_enabled 1
-    pm disable-user --user 0 org.lineageos.setupwizard
+    04:13:46  AddAccessoryActivity: startBluetoothPairer()
+    04:14:11  Starting pairing on 4C:BB:47:42:07:5B
+    04:14:24  BOND_BONDING => BOND_BONDED
+    04:14:25  hh_add_device: ... [BT_TRANSPORT_LE]
+    04:14:28  -> WelcomeActivity
 
-**`tv_user_setup_complete` is not optional, and its absence is silent.**
-Found 2026-10-02, after a Home button that looked broken for an hour.
-`PhoneWindowManager.isUserSetupComplete()` ANDs the ordinary flag with
-`isTvUserSetupComplete()` on any leanback build, so with only
-`user_setup_complete` set the box still believes setup is running.
-`launchHomeFromHotKey()` then bails with `Not going home because user setup
-is in progress` in logcat, and **every HOME keypress does nothing** -- from a
-controller, from a SHIELD remote, or from `input keyevent 3`. The same
-predicate gates other key-launched actions in that file (app-launch
-shortcuts, modifier shortcuts), so expect more than Home to be dead without
-it. A box taken through the wizard normally sets it itself; only the bypass
-needs this line.
+No key was pressed during those 42 seconds. Afterwards
+`pm list packages -d` does **not** list the setup wizard, and
+`tv_user_setup_complete` is 1 -- **the wizard sets it itself**, which is the
+other half of the note below: only the bypass ever needed that line by hand.
 
-adb notes: keep one long-lived adb container, because a fresh one generates a
-new RSA key each run and re-prompts (keys now persist in
-`/srv/build/jetson-tv/adbkeys`). If adb wedges while the gadget is present,
-`settings put global adb_enabled 0` then `1` re-enumerates it.
+Three things worth knowing before doing this again:
+
+- **The accessory step runs first**, before Welcome, not in the middle.
+- **The remaining screens drive fine from the FRDM-K64F HID injector**
+  (`frdm-k64f-hid/tools/hidctl.py key enter|down|right`). Only the accessory
+  step ever needed a real remote. Focus is often not on the obvious control,
+  so `right down enter` was the reliable way to reach "Next"; check a frame
+  between presses rather than assuming.
+- **A factory reset turns adb off**, because `adb_enabled` lives in `/data`.
+  The way back in is the serial console: `/dev/ttyUSB0` gives a `console:/ $`
+  shell as uid 2000 with no login, and
+  `settings put global adb_enabled 1` is enough. The RSA prompt then appears
+  on the TV and has to be accepted with the injector (focus starts on Cancel;
+  one Up reaches "Always allow from this computer").
+
+The old text said the step "waits for a BLE remote and ignores every key, so
+with no radio fitted it never advances". That observation was right; the
+conclusion that the wizard is unusable was wrong.
 
 **Why the wizard is captive, and how to add a Skip.** Full source is in the
 tree: `packages/apps/SetupWizard` (LineageOS) and `packages/apps/TvSettings`.
