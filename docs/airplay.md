@@ -293,6 +293,56 @@ clock against a real sender, compressed ALAC (the self-test's PCM goes around
 the decoder, and the host check only covers verbatim frames), AAC-LC, and
 behaviour on real Wi-Fi.
 
+## The test harness
+
+`scripts/airplay/` holds what is needed to get the box ready and to judge a
+session honestly. Written 9 October, after a factory reset showed how many
+things quietly reset with it.
+
+| | |
+| --- | --- |
+| `preflight.sh` | is the box ready for an Apple device? Run this first. `--tone` also exercises the renderers and listens to HDMI. |
+| `mdns_probe.py` | what a sender actually sees. No avahi-browse or python zeroconf on thebe, so it speaks enough mDNS itself. |
+| `tone_check.py` | records the MS2109 and reports 440 Hz per 100 ms window. |
+| `tvnav.py` | focuses a named row in a leanback menu and presses it, after checking it landed. |
+| `watch.sh` | follows the session log, with a legend of the markers to expect. |
+
+Four things that cost time on 9 October and are worth knowing:
+
+- **A factory reset turns AirPlay off.** `persist.jetsontv.airplay.enabled`
+  is a `persist.` property, so it lives in `/data` and goes with a wipe. The
+  receiver process still runs; it simply advertises nothing, which looks
+  exactly like a broken mDNS stack. `preflight.sh` checks this first.
+  `setprop` from `adb shell` is refused, correctly, so it has to be turned on
+  from Settings > System > AirPlay (or `tvnav.py go AirPlay`).
+- **Discard the first self-test run.** A cold codec costs real time: the
+  first `pcm` run after an idle service measured `mean +38.4 ms, 46 dropped
+  late`, and the two immediately after it were `mean ±0.0 ms, 0 dropped`.
+  Judging the build on a first run would report a regression that is not
+  there.
+- **A wipe also removes `selftest-eld.bin`** and the uxplay key pair. The
+  fresh key is good for pairing tests; the missing fixture just makes the
+  `eld` self-test fail until it is regenerated.
+- **`adb root` needs re-enabling** after a wipe: Developer options are hidden
+  again (seven presses on "Android TV OS build" in About), then "Rooted
+  debugging". Without it the app directory cannot be pushed to.
+
+State on 9 October 2026, after the harness was built, on a freshly reset box:
+
+| check | result |
+| --- | --- |
+| advertising | `JetsonTV._airplay._tcp` and `1AC7894718D4@JetsonTV._raop._tcp`, port 42263 |
+| `pcm` self-test | 440 Hz in 130/130 windows on HDMI, no gaps; 0 dropped, mean ±0.0 ms; video 480/480, worst +0.0 ms |
+| `eld` self-test | 440 Hz in 120/120 windows; `c2.android.aac.decoder for AAC-ELD`; 0 dropped; video 479/479 |
+| `pin` self-test | the code screen renders, four digits, with the "each device asks once" line |
+| paired devices | none, and a new key pair, so pairing starts clean |
+
+One difference worth watching: we advertise `flags=0x4` where real Apple
+hardware on the same LAN advertises `0x204`. The extra bit is not one of the
+well-attested status flags, and our fork enforces the PIN itself rather than
+relying on the advertisement, so this may be nothing. If a sender declines to
+show a code entry box, look here first.
+
 ## Testing with an iPhone or Mac
 
 Keep a log open first:

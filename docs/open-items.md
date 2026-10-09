@@ -108,13 +108,25 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 
 ## Waiting on Apple hardware
 
-7. **AirPlay, closed loop.** It has never met a real sender. Check PIN pairing
+7. **AirPlay, closed loop.** It has never met a real sender. **The bench is
+   now prepared for one** (9 October): `scripts/airplay/preflight.sh` reports
+   8/8, the box advertises on both service types, both audio routes are
+   verified as 440 Hz on real HDMI, the pairing code screen renders, and the
+   paired list is empty with a fresh key pair, so pairing starts clean. The
+   harness is described in `docs/airplay.md`, "The test harness".
+
+   What is left is the part only Apple hardware can do. Check PIN pairing
    first: a code the first time, a wrong code refused, a returning device let
    through, forgetting devices, and PIN off. Then mirroring from an iPhone and
    a Mac, audio from Music, lip sync, metadata and cover art, volume, and Back
-   ending the session. The checklist, and the `sf` flag to watch, are in
-   `docs/airplay.md`. A Mac is not needed: an iPhone mirrors from Control
-   Center.
+   ending the session. The checklist is in `docs/airplay.md`. A Mac is not
+   needed: an iPhone mirrors from Control Center. There is Apple hardware on
+   this LAN already — `mdns_probe.py` sees a MacBook Pro and two other
+   receivers — so this is now a matter of picking one up.
+
+   One thing to watch: we advertise `flags=0x4` where that Apple hardware
+   advertises `0x204`. Our fork enforces the PIN itself, so it may not
+   matter; if a sender never offers a code box, look there first.
 
 ## Waiting on other hardware
 
