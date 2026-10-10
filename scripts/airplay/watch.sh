@@ -28,10 +28,19 @@ watching AirPlay + UxPlay. What to expect:
   audio: ... mean ... dropped late  per-session renderer timing
   video: ... mean ... from due      ditto; mean should be about 0.0 ms
 
+at DEBUG (setprop persist.jetsontv.airplay.debug 1, then restart) also:
+
+  Got metadata of N bytes           title/artist arrived (x-dmap-tagged)
+  Got image data of N bytes         cover art arrived (image/jpeg|png)
+
 LEGEND
 
+# :D so that persist.jetsontv.airplay.debug actually shows. Harmless when
+# it is off -- nothing is logged at DEBUG then. That property is what makes
+# the content type of each SET_PARAMETER and the metadata and artwork
+# payload sizes visible; without it a protocol problem is invisible.
 if [ "${1:-}" = "-d" ]; then
-  A logcat -d -s AirPlay UxPlay
+  A logcat -d -s AirPlay:D UxPlay:D
 else
-  A logcat -s AirPlay UxPlay
+  A logcat -s AirPlay:D UxPlay:D
 fi

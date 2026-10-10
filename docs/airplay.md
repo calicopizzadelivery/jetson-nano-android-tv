@@ -362,8 +362,15 @@ below.
 
 Still unproven after this session, in rough order of how much they matter:
 
-- **Cover art never arrives.** Title, artist and progress all render; the
-  artwork box stays empty. Metadata works, artwork does not.
+- **The now-playing panel loses one element per session, and which one
+  varies.** First session: progress bar present, artwork box empty. Second,
+  joining mid-song: artwork present and correct, no progress bar. Title and
+  artist have been right every time. An earlier revision of this file said
+  "cover art never arrives" -- that was wrong, drawn from one session.
+  Do not theorise further until the SET_PARAMETER instrumentation lands: it
+  logs each Content-Type and length at INFO, which separates "the sender
+  never sent it" from "we received it and dropped it". Everything about this
+  so far has been guessed wrong at least once.
 - A **wrong code** being refused. We never entered one.
 - `FORGET_DEVICES` making a known device ask again.
 - `persist.jetsontv.airplay.pin off` skipping the code entirely.

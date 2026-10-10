@@ -122,8 +122,12 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    sending** — see `patches/README.md`.
 
    Left over, cheap to do with the phone in hand:
-   - **Cover art never arrives.** Title, artist and progress render; the
-     artwork box stays empty. The one real functional gap found.
+   - **The now-playing panel drops one element per session**, and which one
+     varies: first session had a progress bar and no artwork, a mid-song join
+     had artwork and no progress bar. Title and artist always arrive. The
+     SET_PARAMETER Content-Type instrumentation is what will settle whether
+     the sender omits it or we drop it; until then this is unexplained, and
+     the earlier "cover art never arrives" line here was wrong.
    - A wrong code being refused; `FORGET_DEVICES` making a device ask again;
      `persist.jetsontv.airplay.pin off`.
    - Rotation, lip sync, volume, pause/skip, Back ending the session.
