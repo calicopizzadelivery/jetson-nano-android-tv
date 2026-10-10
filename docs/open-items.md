@@ -128,7 +128,19 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
      a track with genuinely no artwork keeps the previous track's cover,
      because `image/none` is ignored rather than clearing. Not observed in
      use, and fixing it risks a flicker, so it is recorded rather than done.
-   - A wrong code being refused; `FORGET_DEVICES` making a device ask again;
+   - ~~A wrong code being refused~~ *done 10 October: refused at
+     `client proof not validated`, nothing entered the register.* But **a
+     mistyped code cannot be retried** -- the PIN is spent at step 1, before
+     the proof is compared, and the screen is torn down by
+     `onConnectionsClosed`. A three-attempt budget was designed and
+     **rejected in review**: enforced at step 1 it would allow 12 guesses per
+     code, worse than today. See `docs/airplay.md`, "The PIN gate".
+   - **Decide what the PIN is for.** `pair-pin-start` is unauthenticated and
+     unthrottled and the code is 4 digits, so a LAN attacker needs a mean
+     9,361 guesses -- minutes, not hours, at any plausible rate. No retry fix
+     changes that. Either throttle and lengthen, or accept it for a home LAN
+     and say so in the notices.
+   - `FORGET_DEVICES` making a device ask again; `FORGET_DEVICES` making a device ask again;
      `persist.jetsontv.airplay.pin off`.
    - Rotation, lip sync, volume, pause/skip, Back ending the session.
    - ~~A **Mac**, mirror.~~ *Done 10 October:* MacBookPro18,2 paired with its

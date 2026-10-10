@@ -444,6 +444,69 @@ previous track's title against the new album
 (`track: I've Seen Footage / Death Grips / Epitaph`). Carrying fields forward
 is what makes that visible; the alternative, blanking them, was worse.
 
+## The PIN gate: what it does and does not protect
+
+Tested deliberately on 10 October, after forgetting both devices.
+
+**The refusal works.** A wrong code is refused at
+`Client Authentication Failure (client proof not validated)` -- the proof was
+actually compared, not rejected early the way the SRP length bug did -- and
+nothing enters the register. Our `c17d869` guard also fired
+(`an unpaired device skipped the PIN: refused`).
+
+**But a mistype is unrecoverable.** `lib/raop_handlers.h` retires the code
+during step 1, the salt/public-key exchange, before the proof arrives at
+step 2:
+
+    snprintf(pin, 6, "%04u", raop->pin % 10000);
+    if (raop->pin < 10000) {
+        raop->pin = 0;
+    }
+
+So any outcome burns it. The retry then gets
+`pair-setup-pin with no pin on screen: refused`, and the screen has already
+gone -- `AirPlayService.onConnectionsClosed()` dismisses it, which fires when
+the open-connection count reaches zero, i.e. exactly when a refused sender
+closes and retries. Four digits read off a television and typed on a phone,
+with no second chance and no error message: a real user will hit this often.
+
+### Why the obvious fix is wrong
+
+A budget of three attempts was designed and **rejected in review**. The
+counter would sit in the step-1 branch, but the secret is compared in step 2,
+which is ungated -- so one armed verifier can be re-driven and the real
+exposure is up to 12 guesses per code (1 in 780) against today's 1 in 9,361.
+A fix has to gate step 2 on the same state, with a generation number, and
+must also spend an attempt only when a proof was genuinely compared:
+`srp_validate_proof` returns negative for the SRP-6a safety check and for a
+bad session-key length too, neither of which is a guess.
+
+### The number that actually matters
+
+`random_pin()` returns 1..9999 with modulo bias, so the best single guess is
+`7/65529`, **1 in 9,361** -- not 1 in 10,000.
+
+`pair-pin-start` is **unauthenticated and unthrottled**: no counter, no
+cooldown, no per-source accounting. An attacker on the LAN can harvest fresh
+codes without limit, so the bound is guesses per second, not codes:
+
+| guesses/s | mean time to pair |
+| --- | --- |
+| 1 | 2.6 hours |
+| 10 | 16 minutes |
+| 100 | 1.6 minutes |
+
+The rate is unmeasured -- each guess costs five 2048-bit modexps, which on
+this SoC plausibly puts it between 10 and 100/s. **This is true today and no
+retry patch changes it.** A four-digit code with no throttling is a speed
+bump against a LAN attacker, not a lock. Treat the PIN as protection against
+a neighbour's phone connecting by accident, not against someone who wants in.
+
+Before hardening this, decide what it is for. Options, cheapest first:
+throttle `pair-pin-start` and failed proofs per source; lengthen the code;
+or accept it as-is for a home LAN and document that. The retry fix is worth
+doing on usability grounds either way, but it is not what makes this safe.
+
 ## Logging, and why there is no debug switch
 
 The image ships a global `log.tag=I`
