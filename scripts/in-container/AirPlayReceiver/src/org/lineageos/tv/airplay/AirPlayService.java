@@ -390,6 +390,11 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     // ---- UxPlay: sessions -------------------------------------------------
 
     @Override
+    public void onPinRejected(int attemptsLeft) {
+        PinActivity.showRejected(attemptsLeft);
+    }
+
+    @Override
     public void onClient(String name, String model) {
         PinActivity.dismiss();
         main.post(() -> {
@@ -403,7 +408,16 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     public void onConnectionsClosed() {
         audio.stop();
         video.reset();
-        PinActivity.dismiss();
+        /*
+         * Deliberately NOT PinActivity.dismiss(). This fires when the raw
+         * open-connection count reaches zero, which says nothing about
+         * pairing: a sender that has just been refused closes its connection
+         * and retries on a new one. Dismissing here tore the code off the
+         * screen at the one moment it was still needed, so a mistype could
+         * not be retried. The screen now goes away when the code is proved
+         * (onClient), when the budget is spent (onPinRejected), or on its own
+         * timer, which matches the code's lifetime.
+         */
         main.post(() -> {
             MirrorActivity.finishIfShowing();
             mirroring = false;

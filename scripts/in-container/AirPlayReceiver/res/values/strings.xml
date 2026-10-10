@@ -7,4 +7,6 @@
     <string name="unknown_device">a nearby device</string>
     <string name="pin_title">AirPlay code</string>
     <string name="pin_body">Enter this code on your iPhone, iPad or Mac to share to %1$s. Each device asks for it once.</string>
+    <string name="pin_wrong">That code was wrong. %1$d more attempt(s).</string>
+    <string name="pin_spent">Too many wrong codes. Try sharing again for a new one.</string>
 </resources>

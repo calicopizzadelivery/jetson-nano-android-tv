@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -34,11 +35,38 @@ public class PinActivity extends Activity {
 
     /** Matches PIN_LIFETIME_NS in UxPlay's raop_handlers.h. */
     private static final long SHOW_MS = 120_000;
+    /** How long the "too many wrong codes" reason stays up before the card goes. */
+    private static final long SPENT_MS = 8_000;
 
     private static volatile PinActivity current;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView pinView;
+    private TextView errorView;
+
+    /**
+     * A code was compared and rejected. Kept INVISIBLE rather than GONE when
+     * empty so that showing it does not grow the card and shift the digits,
+     * which are the one thing the person is reading.
+     */
+    static void showRejected(int attemptsLeft) {
+        PinActivity a = current;
+        if (a == null) {
+            return;
+        }
+        a.runOnUiThread(() -> {
+            if (attemptsLeft > 0) {
+                a.errorView.setText(a.getString(R.string.pin_wrong, attemptsLeft));
+                a.errorView.setVisibility(View.VISIBLE);
+            } else {
+                a.errorView.setText(R.string.pin_spent);
+                a.errorView.setVisibility(View.VISIBLE);
+                // The code is retired; leave the reason up briefly, then go.
+                a.handler.removeCallbacksAndMessages(null);
+                a.handler.postDelayed(a::finish, SPENT_MS);
+            }
+        });
+    }
 
     static void dismiss() {
         PinActivity a = current;
@@ -83,8 +111,15 @@ public class PinActivity extends Activity {
         // A fixed width: with only a maximum, the card measured the text at
         // one width and laid it out at another, and the last line was cut.
         TextView body = text(getString(R.string.pin_body, name), 22, 0xFFDDE2EA);
+        errorView = text(" ", 20, 0xFFFF8A80);
+        errorView.setVisibility(View.INVISIBLE);
         card.addView(body, new LinearLayout.LayoutParams(
                 dp(560), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                dp(560), LinearLayout.LayoutParams.WRAP_CONTENT);
+        elp.topMargin = dp(16);
+        card.addView(errorView, elp);
 
         root.addView(card, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -126,6 +161,9 @@ public class PinActivity extends Activity {
         }
         pinView.setText(pin);
         pinView.setContentDescription(String.join(" ", pin.split("")));
+        // A fresh code: clear any complaint about the previous one.
+        errorView.setText(" ");
+        errorView.setVisibility(View.INVISIBLE);
         handler.removeCallbacksAndMessages(null);
         handler.postDelayed(this::finish, SHOW_MS);
     }

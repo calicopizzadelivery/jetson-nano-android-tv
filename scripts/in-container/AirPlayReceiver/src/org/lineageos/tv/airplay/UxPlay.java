@@ -67,6 +67,9 @@ final class UxPlay {
         /** A device asked to pair: put this code on the screen. */
         void onPinRequested(String pin);
 
+        /** A code was compared and rejected. 0 left means it has been retired. */
+        void onPinRejected(int attemptsLeft);
+
         /** A device proved the PIN (name null), or a paired one named itself. */
         void onPaired(String name);
     }
@@ -228,6 +231,13 @@ final class UxPlay {
         Log.i(TAG, "a device asked to pair; showing the code");
         listener.onPinRequested(pin);
     }
+
+    @SuppressWarnings("unused")  // called from JNI by name
+    private void onPinRejected(int attemptsLeft) {
+        Log.i(TAG, "wrong code, " + attemptsLeft + " attempt(s) left");
+        listener.onPinRejected(attemptsLeft);
+    }
+
 
     /** name is null when it has just proved the PIN, set when SETUP names it. */
     @SuppressWarnings("unused")
