@@ -363,7 +363,7 @@ below.
 Still unproven after this session, in rough order of how much they matter:
 
 - **The now-playing panel loses one element per session, and which one
-  varies.** First session: progress bar present, artwork box empty. Second,
+  varies.** *Mostly fixed 10 October; see "Partial DAAP updates" below.* First session: progress bar present, artwork box empty. Second,
   joining mid-song: artwork present and correct, no progress bar. Title and
   artist have been right every time. An earlier revision of this file said
   "cover art never arrives" -- that was wrong, drawn from one session.
@@ -377,6 +377,59 @@ Still unproven after this session, in rough order of how much they matter:
 - A **Mac**, in both mirror and extend modes.
 - Rotation, lip sync, volume, pause/skip, and Back on the remote ending the
   session.
+
+## Partial DAAP updates, and what they cost
+
+iOS sends **partial** DAAP metadata: several updates in a row across a track
+change, each carrying whichever tags it feels like. `parseDmap` writes a field
+only when its tag is present and leaves the rest null. Three separate bugs
+came from assigning those nulls straight through, and they presented as one
+confusing symptom -- the now-playing panel showing cover art or a progress
+bar but never both, seemingly at random.
+
+- `durationMs` was assigned unconditionally, so an update with no `astm`
+  wiped a length already known. The screen saver shows the progress bar only
+  while `durationMs > 0`, so the bar vanished.
+- `title`, `artist` and `album` likewise, so a title-only update blanked the
+  album -- which then read as a track change and cleared the cover art. It is
+  also why the panel briefly showed one track's title against the next one's
+  album.
+- The track-change test looked at title **and** album, so a change fired it
+  twice, once as the title caught up and again as the album did. A cover
+  arriving between the two wipes was lost. It tests the title alone now.
+
+And the first update of any stream took the title from nothing to a value,
+which counted as a track change and threw away art that had already arrived.
+
+**Do not diagnose this panel by reasoning about it.** Four hypotheses were
+offered before the cause was found, and the first three were wrong: the
+`RAOP not initialized` guard, the sender withholding artwork on a mid-song
+join, and a DACP artwork pull. What settled it was the user noticing the two
+elements were mutually exclusive, which only shared state explains. Read the
+instrumentation instead:
+
+    SET_PARAMETER <type>, N bytes     one INFO line per parameter
+    cover art: N bytes, WxH           or "did not decode", or "none"
+
+## Logging, and why there is no debug switch
+
+The image ships a global `log.tag=I`
+(`device/nvidia/tegra-common/properties.mk`, every variant but `eng`;
+confirm with `adb shell getprop log.tag`). liblog applies it **in the writing
+process**, so an `ANDROID_LOG_DEBUG` write is discarded before logd and no
+logcat filter can recover it. A bare tag in a `-s` filterspec already admits
+DEBUG, so logcat was never the obstacle.
+
+A `persist.jetsontv.airplay.debug` property existed for part of 10 October
+and was removed the same day. It raised the library to `LOGGER_DEBUG` and
+lifted liblog's process minimum to VERBOSE, which **put session keys into
+logcat**: UxPlay logs the SRP proofs, the AES-CBC iv, the fairplay-decrypted
+audio key and raw request bodies at DEBUG. It persisted across reboots and
+the receiver starts at boot, so it would have run indefinitely.
+
+**If you need DEBUG again:** redact those lines first, scope it to a session
+rather than a persisted property, and do not touch the process-wide minimum.
+In most cases you do not need it -- add an INFO line where the question is.
 
 ## The SRP proof length bug
 

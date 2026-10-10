@@ -28,25 +28,18 @@ watching AirPlay + UxPlay. What to expect:
   audio: ... mean ... dropped late  per-session renderer timing
   video: ... mean ... from due      ditto; mean should be about 0.0 ms
 
-at DEBUG (setprop persist.jetsontv.airplay.debug 1, then restart) also:
-
-  Got metadata of N bytes           title/artist arrived (x-dmap-tagged)
-  Got image data of N bytes         cover art arrived (image/jpeg|png)
-
-always, at INFO:
-
-  SET_PARAMETER <type>, N bytes     every parameter the sender sends
+  SET_PARAMETER <type>, N bytes     a parameter arrived (not progress,
+                                    which is once a second and only noise)
   SET_PARAMETER: unhandled ...      a type we ignore, e.g. image/none
 
 LEGEND
 
-# :D is belt and braces -- a bare tag in a filterspec already defaults to
-# VERBOSE, so logcat was never what hid DEBUG. That was the image's global
-# log.tag=I, which liblog applies in the writing process; see the comment in
-# external/uxplay/android/uxplay_jni.c. Each SET_PARAMETER's Content-Type and
-# length is logged at INFO now, so the useful line needs no property at all.
+# Tags only, no :D. DEBUG is deliberately unavailable: UxPlay's debug path
+# prints session keys, and the image's global log.tag=I is what keeps them
+# out of logcat. What matters is logged at INFO instead -- see the comment in
+# external/uxplay/android/uxplay_jni.c.
 if [ "${1:-}" = "-d" ]; then
-  A logcat -d -s AirPlay:D UxPlay:D
+  A logcat -d -s AirPlay UxPlay
 else
-  A logcat -s AirPlay:D UxPlay:D
+  A logcat -s AirPlay UxPlay
 fi

@@ -555,9 +555,15 @@ public class AirPlayService extends Service implements UxPlay.Listener {
              * arrived -- which is why the art was a grey box until something
              * made the sender send it again, like a skip or a pause.
              */
-            boolean hadTrack = !TextUtils.isEmpty(title) || !TextUtils.isEmpty(album);
-            boolean trackChanged = !TextUtils.equals(newTitle, title)
-                    || !TextUtils.equals(newAlbum, album);
+            boolean hadTrack = !TextUtils.isEmpty(title);
+            /*
+             * On the title alone. A track change arrives as several partial
+             * updates, and testing the album as well fired this twice -- once
+             * when the title changed and again when the album caught up --
+             * so a cover arriving between the two was thrown away. A title
+             * change is the one signal that is both sufficient and sent once.
+             */
+            boolean trackChanged = !TextUtils.equals(newTitle, title);
             if (hadTrack && trackChanged) {
                 artwork = null;  // the old cover belongs to the old track
                 positionMs = 0;
@@ -625,6 +631,12 @@ public class AirPlayService extends Service implements UxPlay.Listener {
     @Override
     public void onCoverArt(byte[] jpeg) {
         Bitmap bitmap = jpeg == null ? null : BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length);
+        // Worth a line: without it, art that arrives and is then discarded by
+        // a track change looks exactly like art that never arrived, and a
+        // payload that fails to decode is silent at every log level. Both
+        // have already cost a session on the bench.
+        Log.i(TAG, "cover art: " + (jpeg == null ? "none" : jpeg.length + " bytes, "
+                + (bitmap == null ? "did not decode" : bitmap.getWidth() + "x" + bitmap.getHeight())));
         main.post(() -> {
             artwork = bitmap;
             publishMetadata();
