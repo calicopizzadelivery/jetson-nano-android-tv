@@ -464,6 +464,26 @@ the receiver starts at boot, so it would have run indefinitely.
 rather than a persisted property, and do not touch the process-wide minimum.
 In most cases you do not need it -- add an INFO line where the question is.
 
+### A Mac, 10 October
+
+A **MacBook Pro 16-inch** (`MacBookPro18,2`) mirrored, and it is the stronger
+of the two tests: a full desktop with video playing in it, rather than a
+phone's portrait view.
+
+| | |
+| --- | --- |
+| Pairing | its own four-digit code, unrelated to the phone's, even though both are the same household. The register keys on the device |
+| Register | `remembering C6:29:98:21:73:3C; 2 device(s) paired` -- two devices, two distinct keys, so pairing is per-device and not a single slot |
+| Geometry | `mirrored picture is 1920x1080` -- native landscape, no letterboxing, where the iPhone gave 500x1080 portrait |
+| Video | `OMX.Nvidia.h264.decode`, text legible across the whole desktop |
+| Audio | `AAC decoder c2.android.aac.decoder for AAC-ELD` |
+| Errors | none logged, nothing dropped |
+
+Still untried on the Mac: **extend** mode as opposed to mirror, which
+negotiates its own resolution rather than copying the panel, and **Sound >
+output > JetsonTV**, which should be the third audio codec (AAC-LC; mirroring
+is AAC-ELD and Music over RAOP is ALAC/PCM).
+
 ## The SRP proof length bug
 
 Worth reading before touching pairing, because it broke everything and the

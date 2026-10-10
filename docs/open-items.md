@@ -131,7 +131,11 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    - A wrong code being refused; `FORGET_DEVICES` making a device ask again;
      `persist.jetsontv.airplay.pin off`.
    - Rotation, lip sync, volume, pause/skip, Back ending the session.
-   - A **Mac**, mirror and extend.
+   - ~~A **Mac**, mirror.~~ *Done 10 October:* MacBookPro18,2 paired with its
+     own code, 1920x1080 native, no errors; two devices in the register with
+     distinct keys. Still untried: **extend** mode, and Mac audio output
+     (`Sound > output`), which should give AAC-LC -- the one codec of the
+     three not yet seen.
 
 ## Waiting on other hardware
 
