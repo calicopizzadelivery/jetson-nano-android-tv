@@ -122,12 +122,12 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    sending** — see `patches/README.md`.
 
    Left over, cheap to do with the phone in hand:
-   - **The now-playing panel drops one element per session**, and which one
-     varies: first session had a progress bar and no artwork, a mid-song join
-     had artwork and no progress bar. Title and artist always arrive. The
-     SET_PARAMETER Content-Type instrumentation is what will settle whether
-     the sender omits it or we drop it; until then this is unexplained, and
-     the earlier "cover art never arrives" line here was wrong.
+   - ~~**The now-playing panel drops one element per session.**~~ *Fixed and
+     verified 10 October.* Three partial-DAAP defects, all presenting as one
+     symptom; `docs/airplay.md`, "Partial DAAP updates". Left over from it:
+     a track with genuinely no artwork keeps the previous track's cover,
+     because `image/none` is ignored rather than clearing. Not observed in
+     use, and fixing it risks a flicker, so it is recorded rather than done.
    - A wrong code being refused; `FORGET_DEVICES` making a device ask again;
      `persist.jetsontv.airplay.pin off`.
    - Rotation, lip sync, volume, pause/skip, Back ending the session.

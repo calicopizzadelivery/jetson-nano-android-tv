@@ -362,8 +362,9 @@ below.
 
 Still unproven after this session, in rough order of how much they matter:
 
-- **The now-playing panel loses one element per session, and which one
-  varies.** *Mostly fixed 10 October; see "Partial DAAP updates" below.* First session: progress bar present, artwork box empty. Second,
+- ~~**The now-playing panel loses one element per session.**~~ *Fixed and
+  verified 10 October:* a fresh stream start shows cover art and a moving
+  progress bar together. See "Partial DAAP updates" below. First session: progress bar present, artwork box empty. Second,
   joining mid-song: artwork present and correct, no progress bar. Title and
   artist have been right every time. An earlier revision of this file said
   "cover art never arrives" -- that was wrong, drawn from one session.
@@ -410,6 +411,38 @@ instrumentation instead:
 
     SET_PARAMETER <type>, N bytes     one INFO line per parameter
     cover art: N bytes, WxH           or "did not decode", or "none"
+
+### What the sender actually does
+
+Settled by the instrumentation rather than argued about. A track change, as
+one iPhone sends it:
+
+    SET_PARAMETER application/x-dmap-tagged, 103 bytes
+    track: Epitaph / Make Them Suffer / Epitaph
+    SET_PARAMETER image/none, 0 bytes
+    SET_PARAMETER: unhandled Content-Type image/none
+    SET_PARAMETER application/x-dmap-tagged, 103 bytes
+    SET_PARAMETER image/jpeg, 127768 bytes
+    cover art: 127768 bytes, 600x600
+
+Three things in that trace are worth keeping:
+
+- **`image/none` arrives first, then the real JPEG**, about 35 ms apart. That
+  is the content type the old code dropped with no trace at any level, which
+  is exactly why this took so long to see.
+- **We ignore `image/none`, and that is right here** but leaves one latent
+  gap: a track that genuinely has no artwork keeps the *previous* track's
+  cover, because nothing clears it. Not yet observed, so not yet fixed --
+  handling it would also risk a flicker in the common case above.
+- **The whole burst repeats** about 2.4 s later. Metadata and artwork are
+  sent more than once per track, which is why a pause or a skip could paper
+  over the bugs below.
+
+One cosmetic artefact remains, understood and left alone: the album tag
+arrives before the title, so for about half a second the panel shows the
+previous track's title against the new album
+(`track: I've Seen Footage / Death Grips / Epitaph`). Carrying fields forward
+is what makes that visible; the alternative, blanking them, was worse.
 
 ## Logging, and why there is no debug switch
 
