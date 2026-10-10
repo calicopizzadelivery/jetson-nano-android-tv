@@ -33,12 +33,18 @@ at DEBUG (setprop persist.jetsontv.airplay.debug 1, then restart) also:
   Got metadata of N bytes           title/artist arrived (x-dmap-tagged)
   Got image data of N bytes         cover art arrived (image/jpeg|png)
 
+always, at INFO:
+
+  SET_PARAMETER <type>, N bytes     every parameter the sender sends
+  SET_PARAMETER: unhandled ...      a type we ignore, e.g. image/none
+
 LEGEND
 
-# :D so that persist.jetsontv.airplay.debug actually shows. Harmless when
-# it is off -- nothing is logged at DEBUG then. That property is what makes
-# the content type of each SET_PARAMETER and the metadata and artwork
-# payload sizes visible; without it a protocol problem is invisible.
+# :D is belt and braces -- a bare tag in a filterspec already defaults to
+# VERBOSE, so logcat was never what hid DEBUG. That was the image's global
+# log.tag=I, which liblog applies in the writing process; see the comment in
+# external/uxplay/android/uxplay_jni.c. Each SET_PARAMETER's Content-Type and
+# length is logged at INFO now, so the useful line needs no property at all.
 if [ "${1:-}" = "-d" ]; then
   A logcat -d -s AirPlay:D UxPlay:D
 else

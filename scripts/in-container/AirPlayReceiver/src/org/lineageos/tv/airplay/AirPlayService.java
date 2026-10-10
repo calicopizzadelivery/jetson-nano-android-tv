@@ -535,14 +535,37 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         long[] duration = {0};
         parseDmap(dmap, 0, dmap.length, fields, duration);
         main.post(() -> {
-            if (!TextUtils.equals(fields[0], title) || !TextUtils.equals(fields[2], album)) {
+            /*
+             * Take only what this update actually carried. parseDmap writes a
+             * field solely when its tag is present and leaves the rest null,
+             * and iOS sends partial DAAP updates -- several in a row as a
+             * track changes, each with whichever tags it feels like. Assigning
+             * them unconditionally blanked whatever was missing, which is how
+             * the panel briefly showed one track's title against the next
+             * one's album, and how a title-only update could null the album
+             * and so look like a track change.
+             */
+            String newTitle = fields[0] != null ? fields[0] : title;
+            String newArtist = fields[1] != null ? fields[1] : artist;
+            String newAlbum = fields[2] != null ? fields[2] : album;
+            /*
+             * A real track change, not the first update of a stream. Going
+             * from nothing to a title is how every stream starts, and
+             * treating that as a change threw away cover art that had already
+             * arrived -- which is why the art was a grey box until something
+             * made the sender send it again, like a skip or a pause.
+             */
+            boolean hadTrack = !TextUtils.isEmpty(title) || !TextUtils.isEmpty(album);
+            boolean trackChanged = !TextUtils.equals(newTitle, title)
+                    || !TextUtils.equals(newAlbum, album);
+            if (hadTrack && trackChanged) {
                 artwork = null;  // the old cover belongs to the old track
                 positionMs = 0;
                 durationMs = 0;  // and so does the old length
             }
-            title = fields[0];
-            artist = fields[1];
-            album = fields[2];
+            title = newTitle;
+            artist = newArtist;
+            album = newAlbum;
             /*
              * Only when this update actually carried a length. iOS sends
              * partial DAAP updates -- several in a row as a track changes,
