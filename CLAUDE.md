@@ -49,6 +49,25 @@ Verified on the host 2026-09-10 (first session with an actual shell).
   logged an error; the `Buffer I/O error` lines from that evening were on
   **`sdd`** — the USB card reader holding the Jetson's dying microSD. Check
   *which* device an I/O error names before blaming the SSD.
+- **Power-cycling the Jetson: use the tool, never `OFF 6` on its own.**
+
+      cd ../qtpy-relay-controller && ./tools/jetson-power.py cycle
+
+  The FRDM-K64F HID injector is externally powered and its device port is
+  plugged into the Jetson, so it **back-feeds 5 V into the module's rail**.
+  Cutting channel 6 alone does not de-power anything: the module half-dies
+  instead of resetting, the serial console goes completely silent, and the
+  boot never completes — which reads exactly like a dead module and has been
+  misdiagnosed that way more than once, including by this session on
+  2026-10-10. The order that works is **injector off, Jetson off, Jetson on,
+  injector on**, and `jetson-power.py cycle` does it.
+  The injector's OpenSDA is on **channel 8**; the channel 7 row in
+  `qtpy-relay-controller/docs/port-map.md`'s occupant table is the stale one
+  marked "(moves; see below)", and the back-feed section below it is correct.
+  The same tool also cycles the HDMI sink on channel 5 and waits for it to
+  settle *before* powering the Jetson, because the Jetson decides whether a
+  display exists at boot: **the dongle must be powered and a capture stream
+  open first**, or it comes up believing no monitor is attached.
 - **Hazard while no disk is mounted:** `docker compose up` creates missing
   bind-mount sources as root-owned empty dirs on the root filesystem.
   `jetson-build`'s preflight refuses to start if the `.env` dirs are missing,

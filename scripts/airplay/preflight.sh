@@ -58,12 +58,16 @@ seen=$(python3 "$HERE/mdns_probe.py" -t 6 2>/dev/null)
 case $seen in *[Jj]etson*) pass "advertising over mDNS" "visible to senders on this LAN";;
             *) fail "advertising over mDNS" "senders will not list it";; esac
 
-# 5. the ELD self-test fixture, which a wipe removes
-if A shell 'ls /data/user/0/org.lineageos.tv.airplay/files/selftest-eld.bin' >/dev/null 2>&1; then
-  pass "selftest-eld.bin present"
-else
-  say "selftest-eld.bin" "missing — only the 'eld' self-test needs it; see docs/airplay.md"
-fi
+# 5. the ELD self-test fixture, which a wipe removes. Only root can stat
+# inside the app's data dir, so without it we cannot tell present from
+# missing -- say so rather than reporting a false "missing".
+eld=$(A shell 'ls /data/user/0/org.lineageos.tv.airplay/files/selftest-eld.bin 2>&1' | tr -d '\r')
+case $eld in
+  *selftest-eld.bin) case $eld in *Permission*|*denied*)
+        say "selftest-eld.bin" "cannot check without adb root";;
+     *) pass "selftest-eld.bin present";; esac;;
+  *) say "selftest-eld.bin" "missing — only the 'eld' self-test needs it";;
+esac
 
 # 6. optional: prove the renderers and the HDMI audio path
 if [ "${1:-}" = "--tone" ]; then
