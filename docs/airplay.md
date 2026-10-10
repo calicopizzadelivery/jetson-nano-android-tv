@@ -343,6 +343,75 @@ well-attested status flags, and our fork enforces the PIN itself rather than
 relying on the advertisement, so this may be nothing. If a sender declines to
 show a code entry box, look here first.
 
+## Verified with a real sender, 10 October 2026
+
+An **iPhone 13 Pro Max** (`iPhone14,3`, `AirPlay/960.13.1`) paired, played
+audio and mirrored. This is the first time the stack met Apple hardware.
+
+| | |
+| --- | --- |
+| PIN pairing | code on the TV, entered on the phone, all three `pair-setup-pin` steps, `remembering BA:1E:47:E8:00:27` |
+| Returning device | `a paired device is back` — no code asked, so the register our fork keeps does persist |
+| Audio | now-playing panel with title, artist and a live progress bar; **RMS 0.17 on HDMI, 60/60 windows non-silent** off the MS2109 |
+| Mirroring | FairPlay passed, `video decoder OMX.Nvidia.h264.decode`, `mirrored picture is 500x1080` letterboxed into 1920x1080, text legible |
+| Mirroring audio | `AAC decoder c2.android.aac.decoder for AAC-ELD` |
+
+**It did not work on the first attempt**, and the reason is worth keeping:
+PIN pairing was impossible for *any* client. See "The SRP proof length bug"
+below.
+
+Still unproven after this session, in rough order of how much they matter:
+
+- **Cover art never arrives.** Title, artist and progress all render; the
+  artwork box stays empty. Metadata works, artwork does not.
+- A **wrong code** being refused. We never entered one.
+- `FORGET_DEVICES` making a known device ask again.
+- `persist.jetsontv.airplay.pin off` skipping the code entirely.
+- A **Mac**, in both mirror and extend modes.
+- Rotation, lip sync, volume, pause/skip, and Back on the remote ending the
+  session.
+
+## The SRP proof length bug
+
+Worth reading before touching pairing, because it broke everything and the
+symptom pointed somewhere else entirely.
+
+The phone showed "AirPlay Password" and looped, rejecting every entry. That
+looks like a wrong PIN. It was not: the PIN was never checked. UxPlay's
+`SRP_SHA` is `SRP_SHA1` (`lib/pairing.h:29`), so the client proof `<M>` is one
+20-byte digest, but upstream commit `e0b5309` added
+
+    if (client_proof_len != sizeof(proof))      /* proof[64] */
+
+which demands 64, the SHA-512 size of the local stack buffer. **No client can
+satisfy it.** Real iOS sends 20 and is rejected at
+`Client Authentication Failure (client_proof_len 20 invalid)` before the PIN
+is compared.
+
+Upstream's own fix (`d29dfab`) deletes the check. That restores pairing but
+re-arms the line the check protected: `memcpy(proof, client_proof,
+sizeof(proof))` copies 64 bytes out of the 20 libplist allocated, a 44-byte
+heap over-read on every pairing attempt, still present in upstream master.
+
+Our fix (`external/uxplay` `c4e3844`) does both. The handler keeps a capacity
+bound and copies `client_proof_len` bytes; the exact length check moves into
+`srp_validate_proof`, which derives it from the verifier's session key length
+so it tracks `SRP_SHA` instead of hardcoding 20. `proof_len` became in/out,
+and the response sends the real length rather than a literal 20.
+
+Three things to know if you work on this path:
+
+- **A length mismatch returns -3, not -1**, and leaves `session->srp` intact.
+  Freeing it there turned a recoverable 470 into a crash for the next request
+  on the same connection — and a looping client sends many.
+- **`srp_validate_proof` and `srp_confirm_pair_setup` now guard
+  `session->srp`.** Steps 2 and 3 dereferenced it unconditionally even though
+  a client can send them without step 1.
+- **The PIN is single-use.** `raop_handler_pairpinstart` only issues one when
+  `raop->pin <= 9999`, step 1 zeroes it, and our `c17d869` refuses any later
+  step 1 with "no pin on screen". A phone already stuck in a password loop can
+  never succeed, whatever you fix — dismiss it and start a fresh attempt.
+
 ## Testing with an iPhone or Mac
 
 Keep a log open first:

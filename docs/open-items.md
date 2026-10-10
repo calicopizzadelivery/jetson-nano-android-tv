@@ -108,25 +108,26 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 
 ## Waiting on Apple hardware
 
-7. **AirPlay, closed loop.** It has never met a real sender. **The bench is
-   now prepared for one** (9 October): `scripts/airplay/preflight.sh` reports
-   8/8, the box advertises on both service types, both audio routes are
-   verified as 440 Hz on real HDMI, the pairing code screen renders, and the
-   paired list is empty with a fresh key pair, so pairing starts clean. The
-   harness is described in `docs/airplay.md`, "The test harness".
+7. **AirPlay — mostly closed, 10 October.** An iPhone 13 Pro Max paired,
+   played audio and mirrored: all three `pair-setup-pin` steps, a returning
+   device let through without a code, metadata and a progress bar on the TV,
+   RMS 0.17 measured on HDMI, FairPlay passed, and
+   `OMX.Nvidia.h264.decode` with the picture letterboxed and legible.
+   `docs/airplay.md`, "Verified with a real sender".
 
-   What is left is the part only Apple hardware can do. Check PIN pairing
-   first: a code the first time, a wrong code refused, a returning device let
-   through, forgetting devices, and PIN off. Then mirroring from an iPhone and
-   a Mac, audio from Music, lip sync, metadata and cover art, volume, and Back
-   ending the session. The checklist is in `docs/airplay.md`. A Mac is not
-   needed: an iPhone mirrors from Control Center. There is Apple hardware on
-   this LAN already — `mdns_probe.py` sees a MacBook Pro and two other
-   receivers — so this is now a matter of picking one up.
+   It needed a fix first: PIN pairing was impossible for any client, because
+   upstream demanded a 64-byte SRP proof where the configured SHA-1 produces
+   20. Ours is `external/uxplay` `c4e3844`, and unlike upstream's it also
+   closes the heap over-read that upstream master still has. **Worth
+   sending** — see `patches/README.md`.
 
-   One thing to watch: we advertise `flags=0x4` where that Apple hardware
-   advertises `0x204`. Our fork enforces the PIN itself, so it may not
-   matter; if a sender never offers a code box, look there first.
+   Left over, cheap to do with the phone in hand:
+   - **Cover art never arrives.** Title, artist and progress render; the
+     artwork box stays empty. The one real functional gap found.
+   - A wrong code being refused; `FORGET_DEVICES` making a device ask again;
+     `persist.jetsontv.airplay.pin off`.
+   - Rotation, lip sync, volume, pause/skip, Back ending the session.
+   - A **Mac**, mirror and extend.
 
 ## Waiting on other hardware
 
