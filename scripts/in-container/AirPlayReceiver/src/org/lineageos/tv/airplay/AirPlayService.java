@@ -536,13 +536,27 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         parseDmap(dmap, 0, dmap.length, fields, duration);
         main.post(() -> {
             if (!TextUtils.equals(fields[0], title) || !TextUtils.equals(fields[2], album)) {
-                artwork = null; // the old cover belongs to the old track
+                artwork = null;  // the old cover belongs to the old track
                 positionMs = 0;
+                durationMs = 0;  // and so does the old length
             }
             title = fields[0];
             artist = fields[1];
             album = fields[2];
-            durationMs = duration[0];
+            /*
+             * Only when this update actually carried a length. iOS sends
+             * partial DAAP updates -- several in a row as a track changes,
+             * each with whichever tags it feels like -- and one without
+             * 'astm' leaves duration[0] at 0. Assigning that unconditionally
+             * wiped a length we already had, and since the screen saver shows
+             * the progress bar only while durationMs > 0, the bar silently
+             * disappeared. onProgress then only restores it when it is zero,
+             * so whichever of cover art and progress happened to update after
+             * the wipe was the one on screen: they looked mutually exclusive.
+             */
+            if (duration[0] > 0) {
+                durationMs = duration[0];
+            }
             Log.i(TAG, "track: " + title + " / " + artist + " / " + album);
             publishMetadata();
             publishState();
