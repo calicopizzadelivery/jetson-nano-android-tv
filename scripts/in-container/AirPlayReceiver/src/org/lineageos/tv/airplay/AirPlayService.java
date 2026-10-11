@@ -90,6 +90,15 @@ public class AirPlayService extends Service implements UxPlay.Listener {
      * which restarts a running receiver so the change applies at once.
      */
     private static final String PROP_PIN = "persist.jetsontv.airplay.pin";
+
+    /**
+     * Whether starting an audio stream puts the now-playing panel up by
+     * itself. On by default, which is what a television wants: music starts
+     * and the screen shows what is playing. Off leaves whatever is on screen
+     * alone, for anyone using the box as a speaker while something else is
+     * displayed.
+     */
+    private static final String PROP_DREAM = "persist.jetsontv.airplay.dream";
     /** Every paired device has to enter the PIN again. */
     private static final String ACTION_FORGET_DEVICES = "org.lineageos.tv.airplay.FORGET_DEVICES";
 
@@ -205,6 +214,29 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         registry = new ClientRegistry(this);
         uxplay = new UxPlay(this, this, registry);
         control.execute(this::startServer);
+    }
+
+    /** Whether an audio stream raises the now-playing panel: see PROP_DREAM. */
+    static boolean autoDream() {
+        return !"off".equals(SystemProperties.get(PROP_DREAM, "on"));
+    }
+
+    /**
+     * Unlike the PIN this needs no restart: it is read each time a stream
+     * starts, so a change applies to the next one and never interrupts a
+     * stream in progress.
+     */
+    static void setAutoDream(boolean on) {
+        if (on == autoDream()) {
+            return;
+        }
+        try {
+            SystemProperties.set(PROP_DREAM, on ? "on" : "off");
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("could not set " + PROP_DREAM, e);
+        }
+        Log.i(TAG, on ? "audio will raise the now-playing panel"
+                : "audio will leave the screen alone");
     }
 
     /** Whether new devices must enter the code: see PROP_PIN. */
@@ -742,6 +774,9 @@ public class AirPlayService extends Service implements UxPlay.Listener {
      * allowlisted.
      */
     private void showNowPlayingIfIdle() {
+        if (!autoDream()) {
+            return;  // the user asked for the screen to be left alone
+        }
         try {
             final PowerManager power = getSystemService(PowerManager.class);
             if (power == null || !power.isInteractive()) {

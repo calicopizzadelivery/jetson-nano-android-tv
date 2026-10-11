@@ -71,6 +71,12 @@ public final class AirPlaySettingsProvider extends ContentProvider {
                 }
                 AirPlayService.setRequirePin(getContext(), extras.getBoolean("value"));
                 break;
+            case "set_auto_dream":
+                if (extras == null || !extras.containsKey("value")) {
+                    throw new IllegalArgumentException("set_auto_dream needs a boolean \"value\"");
+                }
+                AirPlayService.setAutoDream(extras.getBoolean("value"));
+                break;
             case "forget":
                 if (arg == null) {
                     registry.forgetAll();
@@ -95,6 +101,7 @@ public final class AirPlaySettingsProvider extends ContentProvider {
         Bundle state = new Bundle();
         state.putBoolean("enabled", SystemProperties.getBoolean(AirPlayService.PROP_ENABLED, false));
         state.putBoolean("require_pin", AirPlayService.requirePin());
+        state.putBoolean("auto_dream", AirPlayService.autoDream());
         state.putString("name", AirPlayService.receiverName(context));
         state.putStringArray("paired_keys", keys);
         state.putStringArray("paired_names", names);
