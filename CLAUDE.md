@@ -296,6 +296,43 @@ not the blueprints — which is why `extract` can bootstrap a cold tree at all.
   `flash_android_t210_emmc_p3448.xml` and `tegra210-p3448-0002-p3449-0000-b00`,
   and the bootloader agreed (`BoardID = 3448, SKU = 0x2`).
 
+### The staging directory keeps orphans, and they ship
+
+**A module dropped from `PRODUCT_PACKAGES` keeps shipping until an
+`installclean`.** `out/target/product/porg/system/...` is a staging directory
+that incremental builds add to and never prune, `system.img` is built from
+whatever is in it, and **`installed-files.txt` is a listing of that directory,
+not a manifest of what the product declares** — so it reports the orphan too
+and looks like confirmation.
+
+Hit on 2026-10-11, and it cost an hour. `TvSettingsTwoPanel` declares
+`overrides: ["TvSettings"]`, the build system honours it
+(`LOCAL_OVERRIDES_PACKAGES := TvSettings` is in
+`out/soong/Android-lineage_porg.mk`), and current builds install only
+TwoPanel. But a `TvSettings.apk` from a build on 30 September was still
+sitting in the staging directory, so it was in `system.img` as well, and the
+September flash had put it on the device. Both carry the package name
+`com.android.tv.settings`:
+
+    W PackageManager: Failed to scan .../TvSettingsTwoPanel:
+      Application package com.android.tv.settings already installed.
+      Skipping duplicate.
+
+Which one wins is scan order, decided per boot. It was TwoPanel earlier that
+day and the stale September one after the next reboot, at which point
+Settings came up with a different layout and no AirPlay panel at all. The
+older note in `patches/README.md` about pushing the "wrong" TvSettings
+variant is the same thing: the active variant was never stable.
+
+- **Diagnose it by timestamp.** `ls -l` in the staging directory: a file
+  months older than the rest is an orphan. `pm path <package>` on the device
+  says which copy actually won.
+- **Fix the tree** with `m installclean`, or remove the one directory if a
+  full rebuild is too expensive.
+- **Fix the device too.** Pushes never delete, so a stale file survives every
+  `adb push` and every reboot. It has to be removed by hand, or the box
+  reflashed.
+
 ### Flashing porg, end to end
 
 The install is two stages: tegraflash writes the bootloader and recovery, then
