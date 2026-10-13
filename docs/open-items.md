@@ -134,7 +134,10 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
      the proof is compared, and the screen is torn down by
      `onConnectionsClosed`. A three-attempt budget was designed and
      **rejected in review**: enforced at step 1 it would allow 12 guesses per
-     code, worse than today. See `docs/airplay.md`, "The PIN gate".
+     code, worse than today. **Fixed and verified 12 October** with the budget
+     enforced at step 2 behind a generation number: two wrong codes then the
+     right one, on the same code. `docs/airplay.md`, "The PIN gate". Still
+     unexercised: burning all three attempts.
    - **Decide what the PIN is for.** `pair-pin-start` is unauthenticated and
      unthrottled and the code is 4 digits, so a LAN attacker needs a mean
      9,361 guesses -- minutes, not hours, at any plausible rate. No retry fix

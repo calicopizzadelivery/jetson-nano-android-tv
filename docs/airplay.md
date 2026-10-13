@@ -470,16 +470,38 @@ the open-connection count reaches zero, i.e. exactly when a refused sender
 closes and retries. Four digits read off a television and typed on a phone,
 with no second chance and no error message: a real user will hit this often.
 
-### Why the obvious fix is wrong
+### Fixed and verified, 12 October
 
-A budget of three attempts was designed and **rejected in review**. The
-counter would sit in the step-1 branch, but the secret is compared in step 2,
-which is ungated -- so one armed verifier can be re-driven and the real
-exposure is up to 12 guesses per code (1 in 780) against today's 1 in 9,361.
-A fix has to gate step 2 on the same state, with a generation number, and
-must also spend an attempt only when a proof was genuinely compared:
-`srp_validate_proof` returns negative for the SRP-6a safety check and for a
-bad session-key length too, neither of which is a guess.
+Three attempts per displayed code. Verified with an iPhone: two wrong codes,
+then the right one, on the same code:
+
+    *** CLIENT MUST NOW ENTER PIN = "7140" AS AIRPLAY PASSWORD
+    pair-setup-pin: wrong code, 2 attempt(s) left
+    pair-setup-pin: wrong code, 1 attempt(s) left
+    remembering BA:1E:47:E8:00:27; 1 device(s) paired
+
+`7140` survived both failures, which is the whole point: before this the
+first mistype retired the code. `proof offered against a retired code` did
+*not* appear, so the generation gate did not misfire on a legitimate retry,
+and nothing entered the register until the correct code.
+
+Not yet exercised: **exhausting all three attempts**, which should show
+"Too many wrong codes" and retire the code so the next client must ask again.
+
+### Why the obvious first fix was wrong
+
+The first design put the counter in the step-1 branch, and was **rejected in
+review**: the secret is compared in step 2, which was ungated, so one armed
+verifier could be re-driven for up to 12 guesses per code (1 in 780) against
+1 in 9,361. Worse than the bug.
+
+What shipped instead gates step 2 on a `pin_generation` recorded by the
+connection at step 1, so the budget bounds *comparisons* rather than arms;
+and spends an attempt only when a proof was genuinely compared --
+`srp_validate_proof` returns `-1` for that alone, `-4` when nothing was
+compared (no armed state, or the SRP-6a check rejecting `<A>`) and `-2` for a
+bad session key length. Without that split a peer could exhaust the budget
+without ever guessing.
 
 ### The number that actually matters
 
