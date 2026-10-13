@@ -485,8 +485,33 @@ first mistype retired the code. `proof offered against a retired code` did
 *not* appear, so the generation gate did not misfire on a legitimate retry,
 and nothing entered the register until the correct code.
 
-Not yet exercised: **exhausting all three attempts**, which should show
-"Too many wrong codes" and retire the code so the next client must ask again.
+### The sender spends one attempt by itself
+
+Found on 12 October while trying to exhaust the budget. The person entered
+two wrong codes and the receiver reported three rejections:
+
+    01:50:43.775  an unpaired device skipped the PIN: refused
+    01:50:43.783  PAIR-PIN-START -> code "0650"
+    01:50:43.826  reconnects, 37 ms later
+    01:50:43.891  wrong code, 2 attempt(s) left
+    01:50:51.700  wrong code, 1 attempt(s) left     <- the person's first
+    01:50:59.539  wrong code, 0 attempt(s) left     <- and second
+
+The first rejection is **108 ms after the code appeared**, which nobody can
+read and type. A device that was paired before still holds the old password,
+so when the receiver forgets it the sender submits that saved one at once and
+only prompts the person after it is refused.
+
+So a budget of three gave a human two, and in exactly the situation where
+someone is most likely to be re-pairing. **MAX_PIN_ATTEMPTS is 4** for that
+reason: one for the sender, three for the person. The cost was computed, not
+guessed -- per displayed code it moves 1 in 3,120 to 1 in 2,340, and it does
+not change guesses per second at all, because a rejected proof releases the
+SRP state so every guess needs its own step 1 whatever the budget is.
+
+Not yet exercised: **a request after the budget is spent**, which should be
+refused with `pair-setup-pin with no pin on screen` and a fresh attempt
+should then issue a different code.
 
 ### Why the obvious first fix was wrong
 
