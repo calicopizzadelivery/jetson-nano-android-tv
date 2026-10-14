@@ -136,8 +136,11 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
      **rejected in review**: enforced at step 1 it would allow 12 guesses per
      code, worse than today. **Fixed and verified 12 October** with the budget
      enforced at step 2 behind a generation number: two wrong codes then the
-     right one, on the same code. `docs/airplay.md`, "The PIN gate". Still
-     unexercised: burning all three attempts.
+     right one, on the same code. `docs/airplay.md`, "The PIN gate". **The whole PIN matrix is now
+     covered** (14 October): code shown, wrong code refused, retry works,
+     budget exhausts, spent code retired, fresh code differs, returning device
+     skips the code, forget works. The budget is 4 because a sender holding a
+     stale password spends one by itself.
    - **Decide what the PIN is for.** `pair-pin-start` is unauthenticated and
      unthrottled and the code is 4 digits, so a LAN attacker needs a mean
      9,361 guesses -- minutes, not hours, at any plausible rate. No retry fix

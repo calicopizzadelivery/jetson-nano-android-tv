@@ -509,9 +509,26 @@ guessed -- per displayed code it moves 1 in 3,120 to 1 in 2,340, and it does
 not change guesses per second at all, because a rejected proof releases the
 SRP state so every guess needs its own step 1 whatever the budget is.
 
-Not yet exercised: **a request after the budget is spent**, which should be
-refused with `pair-setup-pin with no pin on screen` and a fresh attempt
-should then issue a different code.
+Exhaustion verified on 14 October, every branch:
+
+    00:36:45  *** CLIENT MUST NOW ENTER PIN = "2102"
+    00:36:49  wrong code, 3 attempt(s) left
+    00:36:53  wrong code, 2 attempt(s) left
+    00:36:56  wrong code, 1 attempt(s) left
+    00:37:00  wrong code, 0 attempt(s) left
+    00:37:05  pair-setup-pin with no pin on screen: refused
+    00:37:27  *** CLIENT MUST NOW ENTER PIN = "5837"
+    00:37:37  remembering BA:1E:47:E8:00:27; 1 device(s) paired
+
+The spent code is retired rather than left guessable, a fresh attempt rolls a
+different one, and `proof offered against a retired code` never appeared, so
+the generation gate held. Exactly one device ended up in the register.
+
+Note the sender's free attempt is **situational, not guaranteed**: here the
+first rejection came 4 s after the code, so all four were typed. It only
+spends one when it is holding a stale password for this receiver, which is
+the case right after a forget. So the budget is three or four human tries
+depending on the sender's state, never fewer than three.
 
 ### Why the obvious first fix was wrong
 
