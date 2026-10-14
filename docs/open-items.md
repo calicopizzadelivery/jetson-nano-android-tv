@@ -288,6 +288,42 @@ protocol library over JNI. Useful to anyone putting UxPlay on Android, of no
 use to a desktop build. `uxplay/0006` and `libplist/0002` only declare licences
 for Android's notice system.
 
+## Unauthenticated reachability (new, 14 October)
+
+Found while reviewing the PIN gate, not by looking for them. Both predate
+anything we changed and both are reachable from any device on the LAN with
+the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
+
+24. **An unpaired device can crash the receiver with one request.**
+    `android/uxplay_jni.c` zeroes the callback struct and assigns 27 of them;
+    `on_video_stop`, `on_video_scrub`, `on_video_rate`, `on_video_play` and
+    `on_video_acquire_playback_info` (declared in `lib/raop.h`) are not among
+    them, and `raop_init` copies the struct verbatim with no defaults. They
+    are reached through the AirPlay-video/HLS handler table. The guard at
+    `lib/raop.c:279` does **not** keep an attacker out of it: the condition is
+    `!cseq && !raop->hls_support && !ble`, so a request that simply carries a
+    `CSeq` header routes straight past it into the ungated dispatch. Fix by
+    making the `hls_support` test independent of `CSeq`, and by giving the
+    unassigned callbacks null checks or stubs.
+
+25. **An unpaired device can drop the owner's live session.**
+    `raop_init2(g_raop, 1, ...)` hard-wires `nohold`, so any `CSeq`-bearing
+    request from any host takes the branch at `lib/raop.c:293-298`:
+    `httpd_remove_known_connections` plus a video reset. That is the intended
+    behaviour for a shared television taking a new sender, but it needs no
+    authentication at all, so it is also a one-request denial of service
+    against whoever is watching. Decide whether a new sender should have to
+    pair before it can displace the current one.
+
+    Smaller, same cause: `GET_PARAMETER` is ungated and returns the current
+    volume to anyone; `FLUSH` and `TEARDOWN` are ungated but are per-connection
+    no-ops without a live `conn->raop_rtp`.
+
+    None of this is reachable from outside the LAN — AirPlay here has no
+    Bluetooth or AWDL transport — so the exposure is "someone already on your
+    network". That is the same bound as RAIL 7's brute-force note, and the
+    same decision applies.
+
 ## Distribution (new, 13 October)
 
 Both of these turn a bench procedure into something a stranger can run, and

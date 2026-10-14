@@ -39,6 +39,7 @@ SF_BITS = {
     0x2: "not-configured",
     0x4: "audio-cable-attached",
     0x8: "pin-required",
+    0x80: "password-required",
 }
 
 def encode_name(name):
