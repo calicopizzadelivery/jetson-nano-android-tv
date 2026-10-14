@@ -606,10 +606,24 @@ phone's portrait view.
 | Audio | `AAC decoder c2.android.aac.decoder for AAC-ELD` |
 | Errors | none logged, nothing dropped |
 
-Still untried on the Mac: **extend** mode as opposed to mirror, which
-negotiates its own resolution rather than copying the panel, and **Sound >
-output > JetsonTV**, which should be the third audio codec (AAC-LC; mirroring
-is AAC-ELD and Music over RAOP is ALAC/PCM).
+**Extend mode works too** (14 October). "Use As Separate Display" gives a
+genuine second desktop -- menu bar, wallpaper, no windows -- rather than a
+copy of the Mac's panel:
+
+    01:13:46  *** CLIENT MUST NOW ENTER PIN = "1325"
+    01:14:00  remembering C6:29:98:21:73:3C; 2 device(s) paired
+    01:14:01  OMX.Nvidia.h264.decode, AAC-ELD
+    01:14:01  mirrored picture is 1920x1080
+
+It negotiated the **same 1920x1080** as mirror, so it takes the mode we
+advertise rather than choosing its own. Worth knowing: switching from mirror
+to extend re-instantiated the video decoder **three times in 460 ms** before
+the session settled and reconnected. Harmless here, but it is the kind of
+churn that would show up as a stutter if the decoder were slower to start.
+
+Still untried on the Mac: **Sound > output > JetsonTV**, which should be the
+third audio codec (AAC-LC; mirroring is AAC-ELD and Music over RAOP is
+ALAC/PCM).
 
 ## The SRP proof length bug
 
