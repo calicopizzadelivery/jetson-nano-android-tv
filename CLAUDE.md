@@ -613,7 +613,12 @@ beside the image, a pointer in the device's notices) and how to re-run AOSP's
 **`docs/open-items.md` is the running list** of what is left to test or
 build, grouped by what it waits on: the radio, Apple hardware, other
 hardware, or nothing. It includes game streaming (Moonlight/Sunshine, Steam
-Link). Add to it rather than scattering "still to do" sections.
+Link) and, since 2026-10-13, **distribution**: a single `.bin` per release
+(RAIL 22) and a **JetsonTV Flasher** desktop application that consumes it
+(RAIL 23, its own repository). Both are gated on the source release, RAIL
+18b — publishing an image is distribution, and that is what triggers the
+copyleft obligations. Add to it rather than scattering "still to do"
+sections.
 
 **The image does not write-bash the eMMC.** Measured idle at about
 0.06 GB/day with the screen on and 0.15 GB/day with the screensaver running,

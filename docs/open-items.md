@@ -288,6 +288,70 @@ protocol library over JNI. Useful to anyone putting UxPlay on Android, of no
 use to a desktop build. `uxplay/0006` and `libplist/0002` only declare licences
 for Android's notice system.
 
+## Distribution (new, 13 October)
+
+Both of these turn a bench procedure into something a stranger can run, and
+both are gated on **18b**: publishing an image is distribution, which is what
+triggers the source obligations. Do not put a release anywhere public before
+that is in place.
+
+22. **One file per release.** Today an install is two artifacts and five
+    manual steps (`CLAUDE.md`, "Flashing porg, end to end"):
+    `p3450_flash_package.txz` (22 MB, tegraflash writes bootloader and
+    recovery) and `lineage-22.2-<date>-UNOFFICIAL-porg.zip` (~979 MB,
+    sideloaded from recovery). The goal is a single
+    `JetsonTV-<date>-<n>.bin` a user downloads and hands to the flasher.
+
+    Prerequisites, because today both artifacts need hand-fixing every time
+    and a release process cannot:
+    - **`m p3450_flash_package` is not re-runnable.** The signing step does
+      `mv $OUT/signed $OUT/signed_boot`, which moves *into* the destination
+      once it exists, and packaging ends with `cd $(dir $@); tar -cJf $@ *`,
+      which tars the archive into itself on a second run. Fix the rules, or
+      wrap them in a script that cleans first; do not keep doing it by hand.
+    - **The version files are built wrong.** The recipe uses
+      `$(TOYBOX_HOST) cksum` and AOSP's toybox has no `cksum`; the failure is
+      swallowed because it sits in a pipeline whose status comes from `awk`.
+      `emmc_bootblob_ver.txt` and `qspi_bootblob_ver.txt` are flashed into
+      VER/VER_b, so the missing `BYTES:/CRC32:` line has to be appended.
+
+    What the container needs to carry: both payloads, the device
+    (`porg`) and a build id, per-payload checksums, the minimum bootloader or
+    partition expectations if any, and a pointer to the matching source
+    bundle for 18b. Prefer something self-describing and boring — a tar with
+    a manifest, or a short header plus concatenated payloads — over a bespoke
+    format. Sign it, or at least publish checksums beside it.
+
+23. **JetsonTV Flasher.** A Linux desktop application that takes a `.bin` and
+    walks a user through flashing a Nano, starting from recovery mode. **Its
+    own repository**, not a directory in this one.
+
+    The steps it has to own, with the traps already known from this bench:
+    - **Getting into recovery.** The module needs FC_REC pulled to GND at
+      power-on — a jumper on the carrier for a normal user, the recovery
+      relay on this bench. The app should detect `0955:7f21` and, until it
+      sees it, show how to get there rather than failing.
+    - **Running tegraflash.** `flash.sh` exits unless `EUID` is 0 and needs
+      `xxd` and `fdtput`. A desktop app therefore needs a privilege story:
+      ship a udev rule for the RCM device and drop root, or use pkexec. Decide
+      early; it shapes the packaging.
+    - **The second stage.** Reboot to recovery, **format cache and data
+      first** — CAC is flashed with no filesystem, so recovery cannot stage an
+      install and `adb sideload` ends instantly with `Total xfer: 0.00x` and
+      `Can't mount /cache/recovery/last_install` — then sideload the zip.
+    - **adb in recovery is `unauthorized`** and there is no way to accept the
+      prompt, so use `adb reboot sideload-auto-reboot` rather than planning to
+      `adb reboot` back out.
+    - **Only one adb server may hold the device.** A host adb server and a
+      containerised one fight for the USB claim and the device appears in
+      neither. The app should detect and say so, not hang.
+
+    **Check the redistribution terms before bundling anything.** The flasher
+    would carry NVIDIA's tegraflash from the L4T BSP, which is licensed
+    separately from everything else here. If it cannot be redistributed, the
+    app has to fetch it on first run instead, which changes its design. Settle
+    this before building much.
+
 ## Game streaming (new, 30 September)
 
 20. **Moonlight (with a Sunshine host) and Steam Link.** *Moonlight measured
