@@ -571,6 +571,37 @@ throttle `pair-pin-start` and failed proofs per source; lengthen the code;
 or accept it as-is for a home LAN and document that. The retry fix is worth
 doing on usability grounds either way, but it is not what makes this safe.
 
+## macOS Apple Music cannot drive this receiver at all
+
+Settled 15 October, and it is not about the PIN. Apple Music negotiates
+**FairPlay type 0x02**, and UxPlay implements only `0x03`:
+
+    POST /fp-setup (RTSP/1.0) on socket 6
+    fp-setup: 16 bytes, type 0x02
+    fp-setup: unsupported FairPlay type 0x02 (only 0x03 is implemented)
+    fp-setup stage 1 failed, answering empty
+
+The empty body is what the sender sees, which is why macOS reports the vague
+"not compatible with this version of Apple Music". Both failure paths used to
+be silent -- the code said `// Handle error?` -- so the receiver gave no
+reason at any log level. They log now, and `fp-setup: N bytes, type 0x__` is
+logged unconditionally.
+
+**Upstream cannot do it either.** `upstream/master` still has
+`if (req[4] != 0x03) return -1;`. Upstream added a *message* for this case
+(`942d7b2`) but no support, which suggests they hit it too. Supporting `0x02`
+would mean another set of hard-coded FairPlay reply blobs -- the `playfair`
+tables are exactly that -- so it is reverse-engineering Apple's DRM
+handshake, not a configuration change.
+
+Still untested and the one thing that might differ: **macOS system audio**
+(`Sound > Output > JetsonTV`) rather than Apple Music's own AirPlay menu. It
+may negotiate differently. If it does not, no macOS audio path works here.
+
+Noted in passing: upstream's `fairplay_setup` still does
+`memcpy(res, reply_message[mode], 142)` with no bounds check on the
+client-supplied `mode`, so our `c9685af` fix is still worth sending.
+
 ## Audio-only AirPlay cannot work with the PIN on
 
 Settled 15 October, with the request log made visible at INFO. macOS Apple
