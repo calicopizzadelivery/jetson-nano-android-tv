@@ -99,6 +99,20 @@ public class AirPlayService extends Service implements UxPlay.Listener {
      * displayed.
      */
     private static final String PROP_DREAM = "persist.jetsontv.airplay.dream";
+
+    /**
+     * Whether a sender that has not entered the code may still play audio.
+     *
+     * On by default. macOS Apple Music opens a connection with fp-setup and
+     * never pairs, so with the code required it cannot use the box as a
+     * speaker at all -- it reports "an unknown error (470)", which is our own
+     * refusal. Mirroring is refused for such a client either way.
+     *
+     * The exposure is bounded by the network: AirPlay here has no Bluetooth
+     * and no AWDL transport, so a sender has to be on the LAN already. Turn
+     * it off to require the code for audio as well.
+     */
+    private static final String PROP_OPEN_AUDIO = "persist.jetsontv.airplay.openaudio";
     /** Every paired device has to enter the PIN again. */
     private static final String ACTION_FORGET_DEVICES = "org.lineageos.tv.airplay.FORGET_DEVICES";
 
@@ -214,6 +228,32 @@ public class AirPlayService extends Service implements UxPlay.Listener {
         registry = new ClientRegistry(this);
         uxplay = new UxPlay(this, this, registry);
         control.execute(this::startServer);
+    }
+
+    /** Whether an unpaired sender may play audio: see PROP_OPEN_AUDIO. */
+    static boolean openAudio() {
+        return !"off".equals(SystemProperties.get(PROP_OPEN_AUDIO, "on"));
+    }
+
+    /** Restarts the receiver, like the code switch: the library reads it at start. */
+    static void setOpenAudio(Context context, boolean on) {
+        if (on == openAudio()) {
+            return;
+        }
+        try {
+            SystemProperties.set(PROP_OPEN_AUDIO, on ? "on" : "off");
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("could not set " + PROP_OPEN_AUDIO, e);
+        }
+        Log.i(TAG, on ? "unpaired senders may play audio"
+                : "audio now needs the code too");
+        AirPlaySettingsProvider.notifyChanged(context);
+        AirPlayService service = running;
+        if (service != null) {
+            // The library reads it at start, like the code setting, so a
+            // running receiver has to come back for the change to apply.
+            service.main.post(() -> service.endSession("the audio setting changed"));
+        }
     }
 
     /** Whether an audio stream raises the now-playing panel: see PROP_DREAM. */

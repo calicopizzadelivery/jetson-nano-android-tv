@@ -71,6 +71,12 @@ public final class AirPlaySettingsProvider extends ContentProvider {
                 }
                 AirPlayService.setRequirePin(getContext(), extras.getBoolean("value"));
                 break;
+            case "set_open_audio":
+                if (extras == null || !extras.containsKey("value")) {
+                    throw new IllegalArgumentException("set_open_audio needs a boolean \"value\"");
+                }
+                AirPlayService.setOpenAudio(getContext(), extras.getBoolean("value"));
+                break;
             case "set_auto_dream":
                 if (extras == null || !extras.containsKey("value")) {
                     throw new IllegalArgumentException("set_auto_dream needs a boolean \"value\"");
@@ -102,6 +108,7 @@ public final class AirPlaySettingsProvider extends ContentProvider {
         state.putBoolean("enabled", SystemProperties.getBoolean(AirPlayService.PROP_ENABLED, false));
         state.putBoolean("require_pin", AirPlayService.requirePin());
         state.putBoolean("auto_dream", AirPlayService.autoDream());
+        state.putBoolean("open_audio", AirPlayService.openAudio());
         state.putString("name", AirPlayService.receiverName(context));
         state.putStringArray("paired_keys", keys);
         state.putStringArray("paired_names", names);

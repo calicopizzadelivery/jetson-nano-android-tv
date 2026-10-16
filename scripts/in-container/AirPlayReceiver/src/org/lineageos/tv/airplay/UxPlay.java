@@ -95,7 +95,8 @@ final class UxPlay {
     int start(String name, String deviceId, String keyFile, boolean requirePin) {
         // 1920x1080, 60 Hz, 30 fps: UxPlay's defaults, and what the Tegra
         // decoder is proven at. Senders scale to fit.
-        return nativeStart(name, deviceId, keyFile, 1920, 1080, 60, 30, requirePin);
+        return nativeStart(name, deviceId, keyFile, 1920, 1080, 60, 30, requirePin,
+                AirPlayService.openAudio());
     }
 
     void stop() {
@@ -110,7 +111,7 @@ final class UxPlay {
     }
 
     private native int nativeStart(String name, String deviceId, String keyFile, int width,
-            int height, int refreshRate, int maxFps, boolean requirePin);
+            int height, int refreshRate, int maxFps, boolean requirePin, boolean openAudio);
 
     private native void nativeStop();
 
