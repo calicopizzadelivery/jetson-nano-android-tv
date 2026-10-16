@@ -614,6 +614,14 @@ AirPlay 2 setup UxPlay was written for. This is the same wall that stopped
 quirk. An iPhone playing from Music works because it takes the AirPlay 2 path
 with `/pair-verify` first. Same app, two protocols.
 
+**It is not Apple Music, it is the Mac.** `Sound > Output > JetsonTV` --
+system audio, nothing to do with Music -- fails identically (tested 15
+October). That was the one cheap test that might have narrowed this to one
+application; it did not. Every audio-only path from macOS goes to classic
+RAOP, while the same Mac mirrors over AirPlay 2 quite happily. Whether that
+choice is the Mac's alone or something we provoke in our mDNS advertisement is
+the open question, and it is the cheapest thing left to test.
+
 ### How shairport-sync differs, in detail
 
 Read against `external/shairport-sync/rtsp.c` on 15 October. The two
@@ -672,25 +680,169 @@ is the mechanism our own `pw=true` advertisement promises and that UxPlay
 leaves dead. The classic path's native authentication arrives with the
 classic path.
 
+### Does adding ANNOUNCE break mirroring? No, but they cannot overlap
+
+Traced through both trees on 15 October by five readers, each claim then
+attacked by three independent refuters. The answer is clean.
+
+Mirroring is selected **only** inside the binary-plist `SETUP` streams loop,
+`case 110:` at `raop_handlers.h:1163-1204`. A classic session carries SDP in
+an `ANNOUNCE` and a `Transport:` header on `SETUP` -- no plist, no streams
+array -- so it never reaches that arm. The dispatch at `raop.c:429-468` is a
+flat `else if` chain ending in `501`, so a new `ANNOUNCE` arm cannot shadow
+an existing one. Purely additive.
+
+**The one certainty is that the two cannot run at the same time.**
+`raop_init2(g_raop, 1, ...)` at `uxplay_jni.c:672` hard-wires `nohold`, so any
+`CSeq`-bearing request on a new connection runs `raop.c:296-313` and evicts
+the existing connection. Mirroring and classic audio are both
+`CONNECTION_TYPE_RAOP`. **This already happens today** -- the Mac's unhandled
+`ANNOUNCE` evicts a live mirror before it 501s; the only difference is that
+the connection closes at once and frees the slot. Same cause as RAIL 25.
+
+Three risks worth writing down before anyone starts:
+
+- **`raop_handler_setup` must be branched, not extended.** It calls
+  `plist_from_bin` unconditionally at `:820`. A classic SETUP falling through
+  does not crash: the node stays NULL, both `PLIST_IS_*` tests fail, and it
+  answers 200 with an empty dict and no Transport header. A silent success is
+  worse than the current 501.
+- **Session construction is inside the AP2 key block.** `conn->raop_ntp` and
+  `conn->raop_rtp` are built at `:1131-1137`, inside the branch opened at
+  `:826`, which also NULLs the three stream pointers at `:1127-1129` without
+  destroying them. The classic path must build outside that block and must
+  not copy the NULLing, or it leaks and clobbers a live mirror.
+- **The features word is shared.** One value feeds `_raop` `ft`
+  (`dnssd.c:295,303`), `_airplay` `features` (`:373,384`) and `/info`
+  (`raop_handlers.h:168`). An ANNOUNCE handler touches none of it, but any
+  advertisement change touches the iPhone path that works.
+
+`TEARDOWN` needs nothing: with no body both stream flags stay false and it
+falls into the destroy-everything branch at `:1546-1563`.
+
+### Why the advertisement is not the cheap fix it looked like
+
+This was the obvious hope and it does not survive. We advertise
+`ft=0x5A7FFEE6,0x0` -- `FEATURES_2` is `"0x0"` (`dnssdint.h:34`) and
+`set_features` loops `i < 32` (`uxplay_jni.c:508-515`), reconstructing exactly
+`FEATURES_1`, so the upper 32 bits are all zero. Shairport's AirPlay 2 build
+advertises upper word `0x18340` (`shairport.c:1628`) -- bits 38, 40, 41, 47,
+48 -- and macOS does AirPlay 2 audio to it, from Catalina onwards
+(`AIRPLAY2.md:28`). So the structural difference is real.
+
+**But claiming those bits is not a fix, it is a bigger project.** AirPlay 2
+audio needs PTP, and UxPlay has none: `raop_ntp.h:28` has no PTP in its
+enum, and `raop_handlers.h:1090-1096` logs "timingProtocol= NTP is required
+here" for anything else. Shairport needs a whole separate daemon for it
+(NQPTP, exclusive use of ports 319/320, `AIRPLAY2.md:60-68`). Buffered audio
+is absent too -- the stream switch at `raop_handlers.h:1162` has only `110`
+and `96`, and `default:` at `:1276` disconnects. Setting the bits trades
+"Unhandled ANNOUNCE" for "unknown stream type 103" or a PTP rejection, while
+risking the iPhone path that works off the identical record.
+
+**`et` is not the discriminator either**, which was the other tempting
+theory: shairport's *AirPlay 2* branch still advertises `et=0,1`
+(`bonjour_strings.c:87`) and no `ek`, and Macs use AP2 with it. Nothing in
+either tree names the field macOS actually keys off. Do not go bit-hunting
+on a hunch.
+
+Two unrelated advertisement defects found while reading: `AIRPLAY_FLAGS`
+(`dnssdint.h:47`) is dead -- all three branches at `dnssd.c:388,393,397` pass
+the literal `"0x4"` -- and `AIRPLAY_PI` (`dnssdint.h:49`) is a hard-coded
+UUID identical on every UxPlay installation.
+
+### What classic RAOP would cost, and the one unknown that sets it
+
+Most of it already exists and was verified present:
+
+| already here | where |
+| --- | --- |
+| AES-CBC-128 from offset 12, per-packet IV reset, ragged tail in clear | `raop_buffer.c:80`, `:131-136` |
+| ALAC decoder, in-tree, MIT, wired to `ct==2` | `android/alac/alac.c`, `uxplay_jni.c:357-392` |
+| UDP data + control sockets, sync and resend | `raop_rtp.c` |
+| classic NTP timing exchange | `raop_ntp.c` |
+| local ports in the shape a Transport reply needs | `raop_rtp_start_audio()`, called at `raop_handlers.h:1256` |
+| SET_PARAMETER volume in the classic text form | `raop_handlers.h:1378` |
+| FLUSH parsing `RTP-Info: seq=` | `raop_handlers.h:1477-1479` |
+| RECORD emitting `Audio-Latency`, `Audio-Jack-Status` | `raop_handlers.h:1466-1467` |
+| base64 decode | `libplist/src/base64.c`, and BoringSSL `EVP_DecodeBlock` |
+
+To be written: the `ANNOUNCE` arm and its `Public:` entry
+(`raop_handlers.h:786` currently omits it); an SDP parser, since nothing in
+`uxplay/lib` parses SDP (~100-150 lines); a `Transport:` SETUP branch and
+reply, the biggest single piece -- `grep Transport uxplay/lib` returns one
+hit, a TXT constant; lifting NTP/RTP construction out of the ekey block; and
+setting `ct`/`spf` from the fmtp line. Note `alac_reset`
+(`uxplay_jni.c:357-379`) hardcodes every ALAC parameter except `spf`, where
+shairport takes all twelve from fmtp -- a non-canonical sender would
+mis-decode silently rather than fail. Call it **300-450 lines**.
+
+**Whether Apple's leaked RSA private key is needed at all is still unknown,
+and it is the only thing that matters.** Shairport's ANNOUNCE parses only
+`a=rsaaeskey:` (`rtsp.c:3506`) and decrypts with the AirPort Express key at
+`common.c:790`. But if the Mac sends a FairPlay-wrapped key instead, we
+already have the primitive: `fairplay_decrypt()` (`fairplay.h:25`) takes a
+fixed 72 bytes and requires `keymsglen == 164`, which only
+`fairplay_handshake` sets -- and the Mac completes both fp-setup stages on
+the very connection that then sends `ANNOUNCE`, so that precondition holds.
+`fpaeskey` returns **zero hits across both trees**, so if that is what
+arrives there is no reference implementation here to copy.
+
+A cost nobody had counted: `Apple-Challenge`. Shairport answers it on every
+RTSP request (`rtsp.c:4209` -> `:3725` -> `rsa_apply(..., RSA_MODE_AUTH)`),
+needing the same RSA key. `grep -i apple-challenge uxplay/` returns nothing.
+Weak contrary evidence is that our Mac reached `ANNOUNCE` having received no
+`Apple-Response`.
+
+### The probe, and why it cannot be a log level
+
+Committed as `2135a8f`: a narrow INFO log in the 501 branch
+(`raop.c`, after "Unhandled Client Request") that prints, for an
+`application/sdp` body, each `a=` attribute **name** and its decoded byte
+count -- never the value, because these are session keys. It also reports
+whether `Apple-Challenge` is present.
+
+It deliberately is not a log-level change. `uxplay_jni.c:671` pins
+`LOGGER_INFO` with the rationale at `:650-670`: DEBUG prints SRP proofs, the
+AES-CBC iv and the fairplay-decrypted audio key, and `log.tag=I` is the only
+thing keeping them out of logcat. The existing body dump at `raop.c:383-418`
+would not help anyway -- `application/sdp` matches neither the plist test
+(`:385`) nor the `"text/"` test (`:386`), so it would emerge as a hex dump
+truncated at the logger's 4096-byte limit.
+
+Three outcomes, each decisive:
+
+- **`a=fpaeskey:`, ~72 bytes** -- no RSA key, no licensing question,
+  ~350 lines. Best case and genuinely plausible.
+- **`a=rsaaeskey:`, ~256 bytes** -- blocked on Apple's leaked key, which is a
+  RAIL 18b distribution decision rather than an engineering one. The key is
+  already on this disk at `shairport-sync/common.c:790`, so it is not a
+  feasibility blocker.
+- **neither** -- unencrypted, which shairport accepts at `rtsp.c:3563-3565`.
+  Unlikely from macOS, cheapest of all.
+
+Push the app dir and `/system/lib64/libuxplay_jni.so`, reboot, one
+`Sound > Output` attempt. No flash needed.
+
 ### Three options, and what each costs
 
-1. **Implement classic RAOP in our UxPlay fork.** `ANNOUNCE`, a second
-   `SETUP` form, classic `RECORD`/`FLUSH`/`TEARDOWN`, wired to the RTP layer
-   that already exists: roughly 400-600 lines, plus Apple's leaked RSA
-   private key in the image. One app, one mDNS name, one audio path.
-2. **Bring shairport-sync back as an audio-only sidecar.** It is still
-   synced at `external/shairport-sync` with `external/popt`, and it played a
-   clean tone on porg's HDMI on 30 September under enforcing SELinux. It
-   implements the whole classic path, the RSA key and digest auth today. Cost
-   is two services and two mDNS advertisements, so "JetsonTV" would appear
-   twice in a sender's list unless one is renamed; the uid trap under Traps
-   applies to it and not to the UxPlay receiver.
-3. **Accept it.** iPhone and iPad audio work. Mac *mirroring* works, and
-   carries its audio. Only macOS Apple Music's own AirPlay menu -- and
-   possibly `Sound > Output`, still untested -- does not.
+1. **Implement classic RAOP in our UxPlay fork.** 300-450 lines on machinery
+   that already exists, *if* the probe says `fpaeskey`. One app, one mDNS
+   name. Mirroring keeps working; the two cannot overlap until `nohold` is
+   revisited.
+2. **Bring shairport-sync back as an audio-only sidecar.** Still synced at
+   `external/shairport-sync` with `external/popt`, and it played a clean tone
+   on porg's HDMI on 30 September under enforcing SELinux. It has the classic
+   path, the RSA key and digest auth today. Cost is two services and two mDNS
+   advertisements, so "JetsonTV" appears twice in a sender's list unless one
+   is renamed, and the "never run a native audio client as uid `audioserver`"
+   trap applies to it.
+3. **Accept it.** Mac *mirroring* works and carries its audio; iPhone and
+   iPad audio work. Only macOS audio-only does not -- which, since
+   `Sound > Output` fails too, is every audio-only path on a Mac.
 
-No option is free, and option 1 and option 2 both turn on the same question
-about shipping that key, so neither is a decision to take quietly.
+Chasing AirPlay 2 audio instead is a fourth option and the most expensive of
+all: PTP plus buffered audio, with the iPhone path at risk.
 
 ## Why the PIN gate was opened for audio
 

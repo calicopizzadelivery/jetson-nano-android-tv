@@ -327,45 +327,50 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
 ## macOS Apple Music audio (new, 15 October)
 
 26. **Classic RAOP is not implemented, and that is what macOS sends.**
-    Settled by three rounds on the bench and a static read of
-    shairport-sync; the whole comparison is in `docs/airplay.md`, "macOS
-    Apple Music speaks classic RAOP". Short version: the PIN gate was not the
-    blocker, the FairPlay `0x02` version byte was not the blocker either (we
-    now answer it with the `0x03` blobs, exactly as shairport does, and both
-    stages pass), and the Mac then sends `ANNOUNCE`, which UxPlay has no
-    handler for. iPhone and iPad audio are unaffected — they take the
-    AirPlay 2 path.
+    Settled by three rounds on the bench and a five-reader static comparison
+    against shairport-sync, each claim attacked by three refuters. The whole
+    analysis is in `docs/airplay.md`, "macOS Apple Music speaks classic RAOP"
+    and the four sections after it. Short version: the PIN gate was not the
+    blocker, the FairPlay `0x02` version byte was not either (we now answer it
+    with the `0x03` blobs, as shairport does, and both stages pass), and the
+    Mac then sends `ANNOUNCE`, which UxPlay has no handler for. Not an Apple
+    Music quirk -- `Sound > Output` fails identically, so it is every
+    audio-only path on macOS. iPhone and iPad are unaffected.
 
-    Three ways forward, none free, and **1 and 2 both turn on the same
-    question**: classic RAOP decrypts `a=rsaaeskey:` with Apple's leaked
-    AirPort Express **private** RSA key. UxPlay does not carry it; shairport
-    ships it in `common.c`. Whether a distributed JetsonTV image should
-    contain it is a licensing call, not an engineering one, and it needs
-    deciding before either option starts.
+    **Mirroring is not at risk.** Classic RAOP never enters the plist streams
+    loop where `case 110:` lives, and the RTSP dispatch is a flat chain, so an
+    `ANNOUNCE` arm is purely additive. The two cannot run *simultaneously*,
+    because `nohold` evicts the other connection -- but that already happens
+    today, and it is RAIL 25.
 
-    1. **Implement classic RAOP in our UxPlay fork.** `ANNOUNCE` (SDP parse,
-       ~120 lines), a `Transport:`-header `SETUP` form, and classic
-       `RECORD`/`FLUSH`/`TEARDOWN`. The audio transport is *not* a gap:
-       `raop_rtp.c` already runs the control and data UDP sockets and
-       `raop_buffer.c` already does AES-CBC-128 plus ALAC on precisely the
-       frame layout classic RAOP sends. Roughly 400-600 lines. One app, one
-       mDNS name, one audio path, and the PIN gate would need rethinking
-       because classic RAOP authenticates with `Apple-Challenge` and RTSP
-       digest, not `pair-setup-pin`.
-    2. **Bring shairport-sync back as an audio-only sidecar.** Still synced at
-       `external/shairport-sync` with `external/popt`, and it played a clean
-       tone on porg's HDMI on 30 September under enforcing SELinux. It has
-       the classic path, the RSA key and digest auth today. Cost is two
-       services and two mDNS advertisements, so "JetsonTV" appears twice in a
-       sender's list unless one is renamed, and the "never run a native audio
-       client as uid `audioserver`" trap applies to it.
-    3. **Accept it.** Mac *mirroring* works and carries its audio; only
-       Apple Music's own AirPlay menu does not.
+    **The advertisement is not the cheap fix.** We zero the upper 32 features
+    bits where shairport's AP2 build sets `0x18340`, but claiming them means
+    PTP (UxPlay has none, and shairport needs a separate daemon) plus buffered
+    audio (stream type 103, not implemented), while risking the working iPhone
+    path. `et` is not the discriminator either. Nothing in either tree names
+    the field macOS keys off; do not go bit-hunting on a hunch.
 
-    **One cheap test first, and it has not been run:** macOS
-    `Sound > Output > JetsonTV` rather than Apple Music's AirPlay menu. If
-    system audio takes the AirPlay 2 path, option 3 covers most of what a Mac
-    user wants and the other two get much easier to decline.
+    **Next step, and it is cheap and decisive.** Everything turns on which key
+    attribute the Mac's SDP carries, and `fairplay_decrypt()` already exists:
+
+    - `a=fpaeskey:` ~72 bytes -> no RSA key, no licensing question, ~350 lines
+    - `a=rsaaeskey:` ~256 bytes -> needs Apple's leaked AirPort Express private
+      key, which is a RAIL 18b distribution decision, not a feasibility one
+    - neither -> unencrypted, cheapest of all
+
+    A redacted probe is committed on the fork (`2135a8f`) and **built**: it
+    logs attribute names and decoded byte counts, never values, plus whether
+    `Apple-Challenge` is present. Only `libuxplay_jni.so` changed, so:
+
+        ./scripts/airplay/push-receiver.sh      # then one Sound > Output try
+
+    Decide on the key before writing any ANNOUNCE code.
+
+    **Also worth one grep while the box is up:** which `ct` the working iPhone
+    session negotiated. `android/uxplay_jni.c:387` already logs it at INFO. If
+    it is `ct=4` (AAC-LC) rather than `ct=2` (ALAC), then the ALAC path classic
+    RAOP depends on has only ever been exercised by our own self-test, and
+    "the audio pipeline is already proven" is overstated.
 
 ## Distribution (new, 13 October)
 
