@@ -324,6 +324,49 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
     network". That is the same bound as RAIL 7's brute-force note, and the
     same decision applies.
 
+## macOS Apple Music audio (new, 15 October)
+
+26. **Classic RAOP is not implemented, and that is what macOS sends.**
+    Settled by three rounds on the bench and a static read of
+    shairport-sync; the whole comparison is in `docs/airplay.md`, "macOS
+    Apple Music speaks classic RAOP". Short version: the PIN gate was not the
+    blocker, the FairPlay `0x02` version byte was not the blocker either (we
+    now answer it with the `0x03` blobs, exactly as shairport does, and both
+    stages pass), and the Mac then sends `ANNOUNCE`, which UxPlay has no
+    handler for. iPhone and iPad audio are unaffected — they take the
+    AirPlay 2 path.
+
+    Three ways forward, none free, and **1 and 2 both turn on the same
+    question**: classic RAOP decrypts `a=rsaaeskey:` with Apple's leaked
+    AirPort Express **private** RSA key. UxPlay does not carry it; shairport
+    ships it in `common.c`. Whether a distributed JetsonTV image should
+    contain it is a licensing call, not an engineering one, and it needs
+    deciding before either option starts.
+
+    1. **Implement classic RAOP in our UxPlay fork.** `ANNOUNCE` (SDP parse,
+       ~120 lines), a `Transport:`-header `SETUP` form, and classic
+       `RECORD`/`FLUSH`/`TEARDOWN`. The audio transport is *not* a gap:
+       `raop_rtp.c` already runs the control and data UDP sockets and
+       `raop_buffer.c` already does AES-CBC-128 plus ALAC on precisely the
+       frame layout classic RAOP sends. Roughly 400-600 lines. One app, one
+       mDNS name, one audio path, and the PIN gate would need rethinking
+       because classic RAOP authenticates with `Apple-Challenge` and RTSP
+       digest, not `pair-setup-pin`.
+    2. **Bring shairport-sync back as an audio-only sidecar.** Still synced at
+       `external/shairport-sync` with `external/popt`, and it played a clean
+       tone on porg's HDMI on 30 September under enforcing SELinux. It has
+       the classic path, the RSA key and digest auth today. Cost is two
+       services and two mDNS advertisements, so "JetsonTV" appears twice in a
+       sender's list unless one is renamed, and the "never run a native audio
+       client as uid `audioserver`" trap applies to it.
+    3. **Accept it.** Mac *mirroring* works and carries its audio; only
+       Apple Music's own AirPlay menu does not.
+
+    **One cheap test first, and it has not been run:** macOS
+    `Sound > Output > JetsonTV` rather than Apple Music's AirPlay menu. If
+    system audio takes the AirPlay 2 path, option 3 covers most of what a Mac
+    user wants and the other two get much easier to decline.
+
 ## Distribution (new, 13 October)
 
 Both of these turn a bench procedure into something a stranger can run, and

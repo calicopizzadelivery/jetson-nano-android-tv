@@ -420,15 +420,20 @@ in **`docs/airplay.md`**, including the licensing: GPLv3, with BoringSSL linked
 dynamically as the system crypto library. That was the user's explicit call,
 so do not reopen it.
 
-- **Not yet seen with a real Apple device — come back to this when one is
-  available.** It is the first item under "Still to do" in
-  `docs/airplay.md`, with the checklist. Mirroring needs FairPlay, and no
-  open-source sender does it. UxPlay also refuses classic `ANNOUNCE`, so
-  `raopsend` and pyatv can no longer drive audio. Instead, a debug-only
-  **self-test** (`SELFTEST` action, modes `pcm` / `eld` / `music`) pushes a
-  test card and a tone through the real renderers. On porg all three were
-  clean on HDMI, with video 0.0 ms from due. The docs have a checklist for the
-  first iPhone/Mac session.
+- **Verified with real Apple hardware (10-15 October).** An iPhone 13 Pro Max
+  and a Mac both pair with the PIN and mirror; the Mac's extend mode works
+  too, and mirroring carries its own audio. iPhone audio from Music works.
+  **macOS Apple Music's own AirPlay menu does not, and cannot without new
+  code**: the Mac drives classic AirPlay 1 / RAOP and sends `ANNOUNCE`, which
+  UxPlay has no handler for. That is the same wall that stopped `raopsend`
+  and pyatv, so those still cannot drive audio either. RAIL 26 and
+  `docs/airplay.md` have the full three-round diagnosis, the static
+  comparison against shairport-sync, and the three options — one of which
+  needs a decision about shipping Apple's leaked RSA private key. Mirroring
+  needs FairPlay and no open-source sender does it, so for bench work there
+  is also a debug-only **self-test** (`SELFTEST` action, modes `pcm` / `eld`
+  / `music`) that pushes a test card and a tone through the real renderers;
+  on porg all three were clean on HDMI, with video 0.0 ms from due.
 - **To iterate without a flash:** `adb root && adb remount`, push the app dir
   **and `/system/lib64/libuxplay_jni.so`** (the app's `lib/arm64` entry is
   only a symlink to it), then reboot.
@@ -436,7 +441,12 @@ so do not reopen it.
   heap by any device on the LAN. It is fixed and fuzzed in the fork.
 - **New devices need a PIN shown on the TV** (`persist.jetsontv.airplay.pin`,
   default on), once per device. Our fork enforces it; upstream only asked for
-  it. The code screen is verified, but pairing with a real client is not.
+  it. Verified end to end on 12 October with real senders: a wrong code,
+  two wrong then the right one, and all four attempts burned then a fresh
+  session — plus "forget devices". **Audio is exempt by default**
+  (`persist.jetsontv.airplay.openaudio`, "Allow audio without a code"); the
+  gate is deferred, not waived, and mirroring is still refused inside the
+  streams loop so a sender cannot opt out by calling itself audio-only.
   Settings > System > AirPlay and the Streaming tile both turn it off and on
   and forget devices, through the app's `AirPlaySettingsProvider`. All in
   `docs/airplay.md`, "Pairing with a PIN".

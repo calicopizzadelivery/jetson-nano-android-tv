@@ -571,38 +571,128 @@ throttle `pair-pin-start` and failed proofs per source; lengthen the code;
 or accept it as-is for a home LAN and document that. The retry fix is worth
 doing on usability grounds either way, but it is not what makes this safe.
 
-## macOS Apple Music cannot drive this receiver at all
+## macOS Apple Music speaks classic RAOP, which UxPlay does not implement
 
-Settled 15 October, and it is not about the PIN. Apple Music negotiates
-**FairPlay type 0x02**, and UxPlay implements only `0x03`:
+Settled 15 October, in three steps, and the first two answers were both
+wrong. Worth reading in order, because each one looked conclusive.
 
-    POST /fp-setup (RTSP/1.0) on socket 6
+**First answer: the PIN.** Apple Music's very first request on a new
+connection is `POST /fp-setup`, with no `/info` and no `/pair-verify` before
+it, so `pin_gate` refused it and macOS reported "an unknown error (470)".
+True, and not the blocker -- see the next section, which also covers why the
+gate now defaults open.
+
+**Second answer: FairPlay type 0x02.** With the gate open, `fp-setup`
+arrived and UxPlay refused it:
+
     fp-setup: 16 bytes, type 0x02
     fp-setup: unsupported FairPlay type 0x02 (only 0x03 is implemented)
-    fp-setup stage 1 failed, answering empty
 
-The empty body is what the sender sees, which is why macOS reports the vague
-"not compatible with this version of Apple Music". Both failure paths used to
-be silent -- the code said `// Handle error?` -- so the receiver gave no
-reason at any log level. They log now, and `fp-setup: N bytes, type 0x__` is
-logged unconditionally.
+That reads like a different DRM version needing its own reply blobs. It is
+not. **Shairport-sync answers 0x02 with the 0x03 blobs and the sender
+accepts it**, which the static comparison below establishes and the bench
+then confirmed. The version byte was gratuitous strictness in both projects.
+Our fork now warns and answers anyway, and both stages complete:
 
-**Upstream cannot do it either.** `upstream/master` still has
-`if (req[4] != 0x03) return -1;`. Upstream added a *message* for this case
-(`942d7b2`) but no support, which suggests they hit it too. Supporting `0x02`
-would mean another set of hard-coded FairPlay reply blobs -- the `playfair`
-tables are exactly that -- so it is reverse-engineering Apple's DRM
-handshake, not a configuration change.
+    W fp-setup: FairPlay type 0x02, answering with the 0x03 reply
+    POST /fp-setup -- fp-setup: 164 bytes, type 0x02
+    W fp-handshake: FairPlay type 0x02, answering anyway
+    OPTIONS * (RTSP/1.0) on socket 6
 
-Still untested and the one thing that might differ: **macOS system audio**
-(`Sound > Output > JetsonTV`) rather than Apple Music's own AirPlay menu. It
-may negotiate differently. If it does not, no macOS audio path works here.
+**Third answer, and the real one: `ANNOUNCE`.** The Mac gets through
+FairPlay, sends `OPTIONS`, reconnects, redoes both `fp-setup` stages, and
+then asks for the thing UxPlay has no handler for:
 
-Noted in passing: upstream's `fairplay_setup` still does
-`memcpy(res, reply_message[mode], 142)` with no bounds check on the
-client-supplied `mode`, so our `c9685af` fix is still worth sending.
+    ANNOUNCE rtsp://192.168.50.42/3874944510 (RTSP/1.0) on socket 6
+    I UxPlay : Unhandled Client Request: ANNOUNCE ...
+    Connection closed on socket 6
 
-## Audio-only AirPlay cannot work with the PIN on
+macOS Apple Music drives **classic AirPlay 1 / RAOP** -- SDP in an
+`ANNOUNCE`, then a `Transport:`-header `SETUP` -- not the plist-based
+AirPlay 2 setup UxPlay was written for. This is the same wall that stopped
+`raopsend` and pyatv, already noted under Traps; it was never only a test-tool
+quirk. An iPhone playing from Music works because it takes the AirPlay 2 path
+with `/pair-verify` first. Same app, two protocols.
+
+### How shairport-sync differs, in detail
+
+Read against `external/shairport-sync/rtsp.c` on 15 October. The two
+projects diverge in exactly three places, and only one of them is hard.
+
+**`fp-setup`: no real difference, and shairport is the looser of the two.**
+Its `handle_fp_setup` (~line 1843) carries reply blobs
+`server_fp_reply1..4` that are **byte-for-byte identical** to UxPlay's
+`reply_message[0..3]`. It checks the version the same way and then does not
+act on it:
+
+    if (req->content[version_pos] != 3 || req->content[type_pos] != setup_message_type) {
+      debug(1, "Unsupported FP version.");
+    }   /* no return -- falls through to the same reply table */
+
+It also dispatches on byte 6 rather than on content length, and its mode
+dispatch is four explicit `if (mode == n)` arms that leave the reply NULL
+otherwise -- inherently bounds-safe, where UxPlay indexes the table with the
+client's byte. (That is the hole our `c9685af` fixed and upstream still has:
+`memcpy(res, reply_message[mode], 142)`, unchecked.)
+
+**`ANNOUNCE`: shairport has it, UxPlay has no trace of it.** UxPlay's
+dispatch in `lib/raop.c` runs `OPTIONS`, `SETUP`, `RECORD` and the POST
+endpoints, and falls through to `Unhandled Client Request` for everything
+else. Shairport's `handle_announce` (line 3433) parses the SDP for
+`o=iTunes`, `a=fmtp:`, `a=aesiv:`, `a=rsaaeskey:`, `a=min-latency:`,
+`a=max-latency:` and `a=rtpmap:96 L16/44100/2`, then fills an ALAC config
+from the `fmtp` list. That part is ordinary parsing, perhaps 120 lines.
+
+**The key exchange is the real gap.** UxPlay only ever obtains the AES key
+one way: `SETUP`'s plist carries `ekey` (72 bytes) and `eiv` (16), and
+FairPlay decrypts `ekey`. Classic RAOP instead carries `a=rsaaeskey:`,
+encrypted to Apple's AirPort Express **public** key, and the receiver
+decrypts it with the leaked **private** key:
+
+    uint8_t *rsaaeskey = base64_dec(prsaaeskey, &len);
+    uint8_t *aeskey = rsa_apply(rsaaeskey, len, &keylen, RSA_MODE_KEY);
+
+`grep -rl "BEGIN RSA PRIVATE KEY\|rsa_apply" uxplay/lib/` returns nothing.
+Shairport ships that key in `common.c`. **There is no way to implement
+classic RAOP without it**, and whether a distributed JetsonTV image should
+contain Apple's leaked private key is a licensing decision, not an
+engineering one. It is the only part of this that cannot be written from
+scratch.
+
+**What is already in place and would be reused.** The audio transport is not
+a gap. `raop_rtp.c` already runs the control and data UDP sockets, and
+`raop_buffer.c` already does AES-CBC-128 decrypt followed by ALAC decode of
+precisely the frame layout classic RAOP sends. Classic `SETUP` is a gap --
+`Transport` appears nowhere in UxPlay's sources except one mDNS constant --
+as are the classic `RECORD`/`FLUSH`/`TEARDOWN` forms.
+
+**A bonus, if we went shairport's way.** Shairport also implements
+`Apple-Challenge` and RTSP Digest auth (`rtsp.c` lines 3726 and 3807), which
+is the mechanism our own `pw=true` advertisement promises and that UxPlay
+leaves dead. The classic path's native authentication arrives with the
+classic path.
+
+### Three options, and what each costs
+
+1. **Implement classic RAOP in our UxPlay fork.** `ANNOUNCE`, a second
+   `SETUP` form, classic `RECORD`/`FLUSH`/`TEARDOWN`, wired to the RTP layer
+   that already exists: roughly 400-600 lines, plus Apple's leaked RSA
+   private key in the image. One app, one mDNS name, one audio path.
+2. **Bring shairport-sync back as an audio-only sidecar.** It is still
+   synced at `external/shairport-sync` with `external/popt`, and it played a
+   clean tone on porg's HDMI on 30 September under enforcing SELinux. It
+   implements the whole classic path, the RSA key and digest auth today. Cost
+   is two services and two mDNS advertisements, so "JetsonTV" would appear
+   twice in a sender's list unless one is renamed; the uid trap under Traps
+   applies to it and not to the UxPlay receiver.
+3. **Accept it.** iPhone and iPad audio work. Mac *mirroring* works, and
+   carries its audio. Only macOS Apple Music's own AirPlay menu -- and
+   possibly `Sound > Output`, still untested -- does not.
+
+No option is free, and option 1 and option 2 both turn on the same question
+about shipping that key, so neither is a decision to take quietly.
+
+## Why the PIN gate was opened for audio
 
 Settled 15 October, with the request log made visible at INFO. macOS Apple
 Music opens a connection and its **first request is `POST /fp-setup`**:
@@ -625,26 +715,46 @@ set `0x8c` and then overwrote it unconditionally, and `/info` hard-coded
 `statusFlags = 68` with the pin bit clear. Both are corrected and verified on
 the wire. They were real defects. They are simply not this one.
 
-So the choice is between two honest positions, and there is no third:
+### The third position, which is what shipped
 
-- **PIN on**: mirroring and iPhone audio work; macOS Apple Music to the TV
-  does not, and reports a confusing error.
-- **PIN off**: everything works, and any device on the LAN can mirror to the
-  television and play sound through it.
+The first write-up of this said there were two honest positions and no third,
+because the review had established that an audio exemption is one the
+*sender* chooses: `pin_gate` runs before the stream type is parsed, the
+`streams` array is client-supplied, and a hostile client would simply declare
+itself audio-only. That objection was right about the design it was shown.
+The answer was to move the refusal rather than drop it.
 
-Exempting the audio path specifically is **not** a middle ground. The review
-established that the exemption is one the *sender* chooses: `pin_gate` runs
-before the stream type is parsed, and the `streams` array is client-supplied,
-so a hostile client would simply present itself as audio-only. A gate the
-attacker opts out of is advisory, not a gate.
+`persist.jetsontv.airplay.openaudio`, **on by default**, exposed as "Allow
+audio without a code" in Settings > System > AirPlay. It restarts the
+receiver when changed, like the code switch, because the library reads it at
+start. What it does is **defer the gate, not waive it**: an unpaired sender
+gets past `fp-setup` and the front of `SETUP`, and then stream type 110 --
+mirroring -- is refused *inside the streams loop*, which is the first point
+at which the request states which it is. The sender cannot opt into the
+exemption by lying, because by the time it has said "audio" it has also said
+"not mirroring".
 
-What would actually solve it is RTSP digest authentication on the RAOP path
--- we already advertise `pw=true`, which promises exactly that, and the
-handler block exists in `raop_handlers.h` but is dead because `cbs.passwd` is
-never assigned. That is the only route that both admits audio and
-authenticates it. It is unverified work: nothing on this bench has ever
-issued a 401, and the block sits after `pin_gate` in any case. See
-`docs/open-items.md`.
+The cost is real and worth stating plainly: with this on, any device on the
+LAN can play sound through the television and push metadata, artwork and
+volume, and it reaches the FairPlay key exchange and the RTP/NTP setup that
+precede the loop. It cannot mirror, and it cannot do any of it with the
+switch off. The decision was the user's, on the grounds that AirPlay here has
+no Bluetooth and no AWDL transport, so the exposure is bounded by the LAN,
+and a television that silently refuses Apple Music is the worse failure.
+
+**It did not rescue macOS Apple Music**, which turned out to be blocked two
+steps further on -- see the section above. So the setting stands on the case
+for iPhone and iPad audio without a code, which is the one it can actually
+make. That is a weaker justification than the one it was built for, and
+anyone revisiting the default should know it.
+
+What would authenticate audio rather than exempt it is RTSP digest
+authentication on the RAOP path -- we already advertise `pw=true`, which
+promises exactly that, and the handler block exists in `raop_handlers.h` but
+is dead because `cbs.passwd` is never assigned. Shairport-sync implements it
+(`rtsp.c` line 3807), so there is a working reference. It is unverified work:
+nothing on this bench has ever issued a 401, and the block sits after
+`pin_gate` in any case. See `docs/open-items.md`.
 
 ## Logging, and why there is no debug switch
 
