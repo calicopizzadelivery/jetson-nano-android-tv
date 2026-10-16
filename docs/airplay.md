@@ -571,6 +571,50 @@ throttle `pair-pin-start` and failed proofs per source; lengthen the code;
 or accept it as-is for a home LAN and document that. The retry fix is worth
 doing on usability grounds either way, but it is not what makes this safe.
 
+## Audio-only AirPlay cannot work with the PIN on
+
+Settled 15 October, with the request log made visible at INFO. macOS Apple
+Music opens a connection and its **first request is `POST /fp-setup`**:
+
+    Accepted IPv4 client on socket 6
+    POST /fp-setup (RTSP/1.0) on socket 6
+    fp-setup refused: the client has not paired with the pin
+
+No `/info`, no `/pair-verify`, nothing before it. The sender never reads our
+advertisement on that connection, so there is no handshake on this path to
+gate on and nothing we can advertise that changes it. The 470 macOS reports
+as "an unknown error" is our own `pin_gate`.
+
+An iPhone playing from Music works, because it takes the AirPlay path over
+IPv6 with `/pair-verify` first. Same app category, different protocol.
+
+**This was worth fixing anyway and did not fix this.** With the PIN on we
+were advertising `sf=0x4`, which tells a sender no code is required: `dnssd.c`
+set `0x8c` and then overwrote it unconditionally, and `/info` hard-coded
+`statusFlags = 68` with the pin bit clear. Both are corrected and verified on
+the wire. They were real defects. They are simply not this one.
+
+So the choice is between two honest positions, and there is no third:
+
+- **PIN on**: mirroring and iPhone audio work; macOS Apple Music to the TV
+  does not, and reports a confusing error.
+- **PIN off**: everything works, and any device on the LAN can mirror to the
+  television and play sound through it.
+
+Exempting the audio path specifically is **not** a middle ground. The review
+established that the exemption is one the *sender* chooses: `pin_gate` runs
+before the stream type is parsed, and the `streams` array is client-supplied,
+so a hostile client would simply present itself as audio-only. A gate the
+attacker opts out of is advisory, not a gate.
+
+What would actually solve it is RTSP digest authentication on the RAOP path
+-- we already advertise `pw=true`, which promises exactly that, and the
+handler block exists in `raop_handlers.h` but is dead because `cbs.passwd` is
+never assigned. That is the only route that both admits audio and
+authenticates it. It is unverified work: nothing on this bench has ever
+issued a 401, and the block sits after `pin_gate` in any case. See
+`docs/open-items.md`.
+
 ## Logging, and why there is no debug switch
 
 The image ships a global `log.tag=I`
