@@ -423,13 +423,18 @@ so do not reopen it.
 - **Verified with real Apple hardware (10-15 October).** An iPhone 13 Pro Max
   and a Mac both pair with the PIN and mirror; the Mac's extend mode works
   too, and mirroring carries its own audio. iPhone audio from Music works.
-  **macOS Apple Music's own AirPlay menu does not, and cannot without new
-  code**: the Mac drives classic AirPlay 1 / RAOP and sends `ANNOUNCE`, which
-  UxPlay has no handler for. That is the same wall that stopped `raopsend`
-  and pyatv, so those still cannot drive audio either. RAIL 26 and
-  `docs/airplay.md` have the full three-round diagnosis, the static
-  comparison against shairport-sync, and the three options — one of which
-  needs a decision about shipping Apple's leaked RSA private key. Mirroring
+  **macOS audio-only does not** — not Apple Music's menu and not
+  `Sound > Output`, which behave alike. The Mac drives classic AirPlay 1 /
+  RAOP and sends `ANNOUNCE`, which UxPlay has no handler for; same wall that
+  stopped `raopsend` and pyatv. **Not blocked on anything external, as of
+  2026-10-17**: a probe showed the SDP carries `a=fpaeskey` at exactly 72
+  bytes — the input `fairplay_decrypt()` already takes — and no
+  `Apple-Challenge`, so Apple's leaked RSA private key is *not* needed and
+  there is no licensing decision. It is ~300-450 lines of plumbing on
+  primitives the AirPlay 2 path already exercises. Mirroring is unaffected,
+  though the two cannot run at once until `nohold` is revisited. Ordered
+  steps in RAIL 26; full diagnosis and the shairport comparison in
+  `docs/airplay.md`. Mirroring
   needs FairPlay and no open-source sender does it, so for bench work there
   is also a debug-only **self-test** (`SELFTEST` action, modes `pcm` / `eld`
   / `music`) that pushes a test card and a tone through the real renderers;
