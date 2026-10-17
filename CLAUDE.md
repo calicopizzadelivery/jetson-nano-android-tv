@@ -410,7 +410,16 @@ worth knowing before touching audio on this box again:
   that was silent: starting a stream wakes A2DP, and SBC silence costs the
   same bytes as signal.
 
-### AirPlay is UxPlay now (2026-09-30)
+### AirPlay is UxPlay now (2026-09-30), and the fork is BearPortExpress (2026-10-17)
+
+**The AirPlay receiver fork is named BearPortExpress** — our fork of UxPlay
+plus the shairport-sync-derived code in it. The Android app wrapper keeps the
+name `AirPlayReceiver`. Attribution to both upstreams is required and
+prominent, the licence is **GPL-3.0-or-later** (the more restrictive of
+UxPlay's GPLv3 and shairport-sync's MIT, which are compatible), and MIT
+notices must be preserved rather than replaced. RAIL 27 has the detail and
+the obligations; it is gated on RAIL 18b.
+
 
 Shairport was replaced the same day it started working, because the goal is
 screen mirroring from Macs and iPhones, not only audio. UxPlay's protocol
