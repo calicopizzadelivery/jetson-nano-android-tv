@@ -432,18 +432,26 @@ so do not reopen it.
 - **Verified with real Apple hardware (10-15 October).** An iPhone 13 Pro Max
   and a Mac both pair with the PIN and mirror; the Mac's extend mode works
   too, and mirroring carries its own audio. iPhone audio from Music works.
-  **macOS audio-only does not** — not Apple Music's menu and not
-  `Sound > Output`, which behave alike. The Mac drives classic AirPlay 1 /
-  RAOP and sends `ANNOUNCE`, which UxPlay has no handler for; same wall that
-  stopped `raopsend` and pyatv. **Not blocked on anything external, as of
-  2026-10-17**: a probe showed the SDP carries `a=fpaeskey` at exactly 72
-  bytes — the input `fairplay_decrypt()` already takes — and no
-  `Apple-Challenge`, so Apple's leaked RSA private key is *not* needed and
-  there is no licensing decision. It is ~300-450 lines of plumbing on
-  primitives the AirPlay 2 path already exercises. Mirroring is unaffected,
-  though the two cannot run at once until `nohold` is revisited. Ordered
-  steps in RAIL 26; full diagnosis and the shairport comparison in
-  `docs/airplay.md`. Mirroring
+  **macOS audio-only works as of 2026-10-17, but only in `legacyonly` mode,
+  which turns mirroring off.** Every audio path on a Mac — Apple Music's menu
+  and `Sound > Output` alike — uses classic AirPlay 1 / RAOP, now implemented
+  (`ANNOUNCE`, a `Transport:` SETUP, `Apple-Challenge` signing, and the RSA
+  unwrap of `a=rsaaeskey` with the AirPort Express key in
+  `external/uxplay/lib/airport_key.h`, tracked on the owner's decision).
+
+  **The sender picks its key exchange by whether we advertise
+  `_airplay._tcp`, not by the `et` record** — five `et`/`ek` variants were
+  tested and ignored. So mirroring and Mac audio cannot both be served from
+  one advertisement: that is the open decision in RAIL 26, and the default
+  today silently has no Mac audio. `persist.jetsontv.airplay.legacyonly`
+  switches between them and needs root to set.
+
+  Mirroring is regression-tested and unaffected: it negotiates FairPlay
+  `0x03` where Mac audio-only sends `0x02`, which `lib/playfair` cannot
+  unwrap. **Verify this path by structure, not level** — a wrong key produced
+  a convincing now-playing screen and a non-zero peak, and only the L/R
+  non-zero ratio (2.0 vs 1.0) and lag-1 autocorrelation (0.08 vs 0.98)
+  exposed it. Full account in `docs/airplay.md`. Mirroring
   needs FairPlay and no open-source sender does it, so for bench work there
   is also a debug-only **self-test** (`SELFTEST` action, modes `pcm` / `eld`
   / `music`) that pushes a test card and a tone through the real renderers;

@@ -326,74 +326,34 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
 
 ## macOS Apple Music audio (new, 15 October)
 
-26. **Classic RAOP is not implemented, and that is what macOS sends.**
-    Settled by three rounds on the bench and a five-reader static comparison
-    against shairport-sync, each claim attacked by three refuters. The whole
-    analysis is in `docs/airplay.md`, "macOS Apple Music speaks classic RAOP"
-    and the four sections after it. Short version: the PIN gate was not the
-    blocker, the FairPlay `0x02` version byte was not either (we now answer it
-    with the `0x03` blobs, as shairport does, and both stages pass), and the
-    Mac then sends `ANNOUNCE`, which UxPlay has no handler for. Not an Apple
-    Music quirk -- `Sound > Output` fails identically, so it is every
-    audio-only path on macOS. iPhone and iPad are unaffected.
+26. **Classic RAOP implemented; macOS audio plays. 17 October.** Measured off
+    the HDMI capture, not judged by ear: L/R non-zero ratio 1.000, lag-1
+    autocorrelation 0.978, 99.8% non-zero samples, 0 silent windows in 119,
+    0 packets held for lack of sync. The full account, including the two
+    answers that were wrong first, is in `docs/airplay.md`, "macOS audio:
+    classic RAOP, and how it was finally made to play".
 
-    **Mirroring is not at risk.** Classic RAOP never enters the plist streams
-    loop where `case 110:` lives, and the RTSP dispatch is a flat chain, so an
-    `ANNOUNCE` arm is purely additive. The two cannot run *simultaneously*,
-    because `nohold` evicts the other connection -- but that already happens
-    today, and it is RAIL 25.
+    What it needed, in order: `legacyonly` mode so the Mac stops demanding
+    FairPlay; `Apple-Challenge`/`Apple-Response` signing so it does not hang
+    up after OPTIONS; and the RSA unwrap of `a=rsaaeskey`.
 
-    **The advertisement is not the cheap fix.** We zero the upper 32 features
-    bits where shairport's AP2 build sets `0x18340`, but claiming them means
-    PTP (UxPlay has none, and shairport needs a separate daemon) plus buffered
-    audio (stream type 103, not implemented), while risking the working iPhone
-    path. `et` is not the discriminator either. Nothing in either tree names
-    the field macOS keys off; do not go bit-hunting on a hunch.
+    **Regression-tested the same day:** Mac mirroring still works with
+    `legacyonly=0` — pairs, `fp-setup type 0x03`, `OMX.Nvidia.h264.decode`,
+    1920x1080 picture. The FairPlay version gate does not fire for it, because
+    mirroring negotiates `0x03` where Mac audio-only negotiates `0x02`.
 
-    **Answered 17 October, and the blocker is gone.** The probe ran against a
-    Mac on `Sound > Output`:
+    **Still open, and it is a decision rather than a bug:** mirroring and Mac
+    audio cannot both be served from one advertisement. `_airplay._tcp`
+    present means the Mac insists on FairPlay `0x02`, which cannot be
+    unwrapped; absent means mirroring has no transport. Both demonstrated.
+    The three ways out — a shairport sidecar as a second advertised service,
+    exposing the switch in Settings, or implementing the `0x02` derivation —
+    are costed in `docs/airplay.md`. **Nothing should ship until this is
+    decided**, because the default today silently has no Mac audio.
 
-        SDP probe: 326 bytes, Apple-Challenge absent
-          a=rtpmap     (16 base64 chars, ~12 bytes)
-          a=fmtp       (36 base64 chars, ~27 bytes)
-          a=fpaeskey   (96 base64 chars, ~72 bytes)
-          a=aesiv      (22 base64 chars, ~16 bytes)
-
-    `a=fpaeskey` at exactly 72 bytes is the input `fairplay_decrypt()` takes
-    (`fairplay.h:25`), already called that way on the AirPlay 2 path at
-    `raop_handlers.h:1015`. **No Apple RSA private key is needed and there is
-    no licensing decision.** `Apple-Challenge` is absent too, so the RSA auth
-    path does not arise either. Every primitive already exists in the fork.
-
-    **This is now ordinary work, not a blocked item.** What remains is
-    plumbing, in this order:
-
-    1. `ANNOUNCE` arm at `raop.c:453`, plus `ANNOUNCE` in the `Public:` header
-       at `raop_handlers.h:786`.
-    2. SDP parser for `fpaeskey` / `aesiv` / `fmtp` / `rtpmap`; stash the
-       decrypted aeskey and the iv on `raop_conn_s`.
-    3. Branch `raop_handler_setup` on the `Transport:` header **before** the
-       unconditional `plist_from_bin` at `:820` -- falling through does not
-       crash, it answers 200 with an empty dict, which is worse than a 501.
-    4. Lift `raop_ntp_init`/`raop_rtp_init` out of the ekey/eiv block at
-       `:1131-1137` without copying the NULLing at `:1127-1129`.
-    5. Set `ct`/`spf` from fmtp and call `audio_get_format`; Transport reply.
-       `RECORD`/`FLUSH`/`TEARDOWN`/`SET_PARAMETER` need little or nothing.
-    6. Re-test mirroring with a live session, and expect eviction either way
-       until `nohold` is revisited.
-
-    Note `alac_reset` (`uxplay_jni.c:357-379`) hardcodes every ALAC parameter
-    except `spf`, where shairport takes all twelve from fmtp. A sender with a
-    non-canonical fmtp would mis-decode silently rather than fail, so read the
-    Mac's fmtp before trusting the hardcoded line.
-
-    The probe (`2135a8f`) is temporary and comes out when `ANNOUNCE` lands.
-
-    **Also worth one grep while the box is up:** which `ct` the working iPhone
-    session negotiated. `android/uxplay_jni.c:387` already logs it at INFO. If
-    it is `ct=4` (AAC-LC) rather than `ct=2` (ALAC), then the ALAC path classic
-    RAOP depends on has only ever been exercised by our own self-test, and
-    "the audio pipeline is already proven" is overstated.
+    **Not yet retested:** iPhone audio over AirPlay 2. It uses the same
+    `_raop._tcp` record that `et` and `ek` were changed in, so it is the last
+    untested regression from this work.
 
 ## Naming and attribution (new, 17 October)
 
