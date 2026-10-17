@@ -794,42 +794,60 @@ needing the same RSA key. `grep -i apple-challenge uxplay/` returns nothing.
 Weak contrary evidence is that our Mac reached `ANNOUNCE` having received no
 `Apple-Response`.
 
-### The probe, and why it cannot be a log level
+### The probe, and what it answered
 
-Committed as `2135a8f`: a narrow INFO log in the 501 branch
-(`raop.c`, after "Unhandled Client Request") that prints, for an
-`application/sdp` body, each `a=` attribute **name** and its decoded byte
-count -- never the value, because these are session keys. It also reports
-whether `Apple-Challenge` is present.
+Committed as `2135a8f`: a narrow INFO log in the 501 branch of `raop.c` that
+prints, for an `application/sdp` body, each `a=` attribute **name** and its
+decoded byte count -- never the value, because these are session keys. It also
+reports whether `Apple-Challenge` is present.
 
 It deliberately is not a log-level change. `uxplay_jni.c:671` pins
 `LOGGER_INFO` with the rationale at `:650-670`: DEBUG prints SRP proofs, the
 AES-CBC iv and the fairplay-decrypted audio key, and `log.tag=I` is the only
 thing keeping them out of logcat. The existing body dump at `raop.c:383-418`
-would not help anyway -- `application/sdp` matches neither the plist test
-(`:385`) nor the `"text/"` test (`:386`), so it would emerge as a hex dump
-truncated at the logger's 4096-byte limit.
+would not have helped anyway -- `application/sdp` matches neither the plist
+test (`:385`) nor the `"text/"` test (`:386`).
 
-Three outcomes, each decisive:
+**Answered on 17 October, and it is the best case on every count.** A Mac
+driving `Sound > Output` (not Apple Music's own menu -- both behave alike):
 
-- **`a=fpaeskey:`, ~72 bytes** -- no RSA key, no licensing question,
-  ~350 lines. Best case and genuinely plausible.
-- **`a=rsaaeskey:`, ~256 bytes** -- blocked on Apple's leaked key, which is a
-  RAIL 18b distribution decision rather than an engineering one. The key is
-  already on this disk at `shairport-sync/common.c:790`, so it is not a
-  feasibility blocker.
-- **neither** -- unencrypted, which shairport accepts at `rtsp.c:3563-3565`.
-  Unlikely from macOS, cheapest of all.
+    SDP probe: 326 bytes, Apple-Challenge absent
+      a=rtpmap     (16 base64 chars, ~12 bytes)
+      a=fmtp       (36 base64 chars, ~27 bytes)
+      a=fpaeskey   (96 base64 chars, ~72 bytes)
+      a=aesiv      (22 base64 chars, ~16 bytes)
 
-Push the app dir and `/system/lib64/libuxplay_jni.so`, reboot, one
-`Sound > Output` attempt. No flash needed.
+Three gates opened at once:
+
+- **`a=fpaeskey`, not `a=rsaaeskey`, and it is exactly 72 bytes.** That is
+  precisely the input `fairplay_decrypt()` takes -- `fairplay.h:25` declares
+  `const unsigned char input[72]` -- and the AirPlay 2 SETUP path already
+  calls it that way at `raop_handlers.h:1015` with a 72-byte `ekey`. The Mac
+  completes both fp-setup stages on the very connection that then sends
+  `ANNOUNCE`, so `fp->keymsglen == 164` holds and the primitive is primed.
+  **Apple's leaked AirPort Express RSA private key is not needed, and the
+  licensing decision that was gating this does not arise.**
+- **`Apple-Challenge` is absent.** The second uncounted cost. No
+  `rsa_apply(..., RSA_MODE_AUTH)`, so UxPlay having no handling of it does not
+  matter. No RSA anywhere on this path.
+- **`aesiv` is 16 bytes** -- what `aes_cbc_init` at `raop_buffer.c:80` wants --
+  and `fmtp` is present for the ALAC configuration.
+
+So every cryptographic primitive this needs already exists in our fork and is
+already exercised daily by the working AirPlay 2 path. What remains is
+protocol plumbing: an `ANNOUNCE` arm, an SDP parser, a `Transport:` SETUP
+branch, and lifting NTP/RTP construction out of the ekey block. The estimate
+of 300-450 lines stands, and nothing in it is novel crypto.
+
+The probe is temporary and should come out once `ANNOUNCE` is implemented.
 
 ### Three options, and what each costs
 
 1. **Implement classic RAOP in our UxPlay fork.** 300-450 lines on machinery
-   that already exists, *if* the probe says `fpaeskey`. One app, one mDNS
-   name. Mirroring keeps working; the two cannot overlap until `nohold` is
-   revisited.
+   that already exists. The probe said `fpaeskey`, so this is now the
+   recommended route: no leaked key, no licensing question, no new crypto.
+   One app, one mDNS name. Mirroring keeps working; the two cannot overlap
+   until `nohold` is revisited.
 2. **Bring shairport-sync back as an audio-only sidecar.** Still synced at
    `external/shairport-sync` with `external/popt`, and it played a clean tone
    on porg's HDMI on 30 September under enforcing SELinux. It has the classic

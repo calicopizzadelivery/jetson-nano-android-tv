@@ -350,21 +350,44 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
     path. `et` is not the discriminator either. Nothing in either tree names
     the field macOS keys off; do not go bit-hunting on a hunch.
 
-    **Next step, and it is cheap and decisive.** Everything turns on which key
-    attribute the Mac's SDP carries, and `fairplay_decrypt()` already exists:
+    **Answered 17 October, and the blocker is gone.** The probe ran against a
+    Mac on `Sound > Output`:
 
-    - `a=fpaeskey:` ~72 bytes -> no RSA key, no licensing question, ~350 lines
-    - `a=rsaaeskey:` ~256 bytes -> needs Apple's leaked AirPort Express private
-      key, which is a RAIL 18b distribution decision, not a feasibility one
-    - neither -> unencrypted, cheapest of all
+        SDP probe: 326 bytes, Apple-Challenge absent
+          a=rtpmap     (16 base64 chars, ~12 bytes)
+          a=fmtp       (36 base64 chars, ~27 bytes)
+          a=fpaeskey   (96 base64 chars, ~72 bytes)
+          a=aesiv      (22 base64 chars, ~16 bytes)
 
-    A redacted probe is committed on the fork (`2135a8f`) and **built**: it
-    logs attribute names and decoded byte counts, never values, plus whether
-    `Apple-Challenge` is present. Only `libuxplay_jni.so` changed, so:
+    `a=fpaeskey` at exactly 72 bytes is the input `fairplay_decrypt()` takes
+    (`fairplay.h:25`), already called that way on the AirPlay 2 path at
+    `raop_handlers.h:1015`. **No Apple RSA private key is needed and there is
+    no licensing decision.** `Apple-Challenge` is absent too, so the RSA auth
+    path does not arise either. Every primitive already exists in the fork.
 
-        ./scripts/airplay/push-receiver.sh      # then one Sound > Output try
+    **This is now ordinary work, not a blocked item.** What remains is
+    plumbing, in this order:
 
-    Decide on the key before writing any ANNOUNCE code.
+    1. `ANNOUNCE` arm at `raop.c:453`, plus `ANNOUNCE` in the `Public:` header
+       at `raop_handlers.h:786`.
+    2. SDP parser for `fpaeskey` / `aesiv` / `fmtp` / `rtpmap`; stash the
+       decrypted aeskey and the iv on `raop_conn_s`.
+    3. Branch `raop_handler_setup` on the `Transport:` header **before** the
+       unconditional `plist_from_bin` at `:820` -- falling through does not
+       crash, it answers 200 with an empty dict, which is worse than a 501.
+    4. Lift `raop_ntp_init`/`raop_rtp_init` out of the ekey/eiv block at
+       `:1131-1137` without copying the NULLing at `:1127-1129`.
+    5. Set `ct`/`spf` from fmtp and call `audio_get_format`; Transport reply.
+       `RECORD`/`FLUSH`/`TEARDOWN`/`SET_PARAMETER` need little or nothing.
+    6. Re-test mirroring with a live session, and expect eviction either way
+       until `nohold` is revisited.
+
+    Note `alac_reset` (`uxplay_jni.c:357-379`) hardcodes every ALAC parameter
+    except `spf`, where shairport takes all twelve from fmtp. A sender with a
+    non-canonical fmtp would mis-decode silently rather than fail, so read the
+    Mac's fmtp before trusting the hardcoded line.
+
+    The probe (`2135a8f`) is temporary and comes out when `ANNOUNCE` lands.
 
     **Also worth one grep while the box is up:** which `ct` the working iPhone
     session negotiated. `android/uxplay_jni.c:387` already logs it at INFO. If
