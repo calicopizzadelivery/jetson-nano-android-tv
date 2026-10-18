@@ -1,5 +1,15 @@
 # AirPlay receiver
 
+**The receiver is called BearPortExpress** (named 2026-10-17). It is a fork of
+[UxPlay](https://github.com/FDH2/UxPlay), GPL-3.0-or-later, with classic
+AirPlay 1 / RAOP support written by reading
+[shairport-sync](https://github.com/mikebrady/shairport-sync), MIT. Further up
+the chain it carries [shairplay](https://github.com/juhovh/shairplay)
+(LGPL-2.1-or-later), David Hammerton's ALAC decoder and Tom Cocagne's SRP
+implementation (both MIT). All are GPL-3 compatible and all keep their own
+notices — relicensing the whole does not relicense the parts. The fork's
+README has the full statement; RAIL 27 has the reasoning.
+
 The box shows up on iPhones, iPads and Macs under its device name, **JetsonTV**
 unless renamed: Screen Mirroring
 from Control Center, and AirPlay audio from Music or anything else with an

@@ -369,48 +369,38 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
 
 ## Naming and attribution (new, 17 October)
 
-27. **The AirPlay fork is called BearPortExpress.** Named by the project owner
-    on 2026-10-17. It covers our fork of UxPlay and the shairport-sync-derived
-    code in it -- the receiver as a whole, not the Android app wrapper, which
-    stays `AirPlayReceiver` inside JetsonTV.
+27. **Done, 18 October. The fork is BearPortExpress, licensed
+    GPL-3.0-or-later, with attribution in place.**
 
-    **Attribution, prominently, in the README and the docs.** Both upstreams
-    did the hard work and both must be credited by name, with links, plus a
-    plain thank-you for the projects as inspiration:
+    The fork's README now leads with the name, the credits and the licence,
+    and upstream's README is preserved unaltered below it rather than
+    replaced. JetsonTV's own README and `docs/airplay.md` carry a short
+    version with links.
 
-    - **UxPlay** (antimof/UxPlay) -- the AirPlay 2 mirroring receiver this is
-      forked from. GPL-3.0-or-later.
-    - **shairport-sync** (mikebrady/shairport-sync) -- MIT. The classic RAOP
-      reference throughout: it established that the packet format and crypto
-      were not our bug, and the RSA key exchange came from reading it. The
-      ALAC decoder descends from it too (David Hammerton, 2005, MIT).
+    Credited: **UxPlay** (fduncanh), forked from; **shairport-sync** (Mike
+    Brady), not forked but the reference the whole classic RAOP path was
+    written from; **shairplay** (Juho Vähä-Herttua), the LGPL core most of
+    `lib/` descends from; **David Hammerton** (ALAC) and **Tom Cocagne**
+    (SRP).
 
-    **Licence: GPL-3.0-or-later**, which is the more restrictive of the two
-    and is what the owner asked for. Verified 2026-10-17 that there is no
-    conflict: UxPlay's `LICENSE` is GPLv3 and its sources carry
-    `SPDX-License-Identifier: GPL-3.0-or-later`; shairport-sync's `rtsp.c`,
-    `common.c` and `player.c` all carry the MIT permission notice, as does
-    `android/alac/alac.c`. MIT is GPL-compatible, so MIT code may be taken
-    into a GPLv3 work.
+    **The licence survey corrected what this item originally said.** It had
+    UxPlay as GPLv3 and shairport-sync as MIT and stopped there, missing the
+    LGPL-2.1 shairplay lineage inside UxPlay itself. Actual counts across
+    `lib/` and `android/`: 44 files LGPL-2.1-or-later, 4 MIT (`srp`, `alac`),
+    2 GPL (`crypto`). LGPL-2.1+ and MIT are both GPL-3 compatible, so
+    GPL-3.0-or-later as the most restrictive is correct — but the reasoning
+    now matches the tree.
 
-    **The obligation that comes with that**, and the one easiest to get wrong:
-    MIT requires its copyright and permission notices to be **preserved**, not
-    replaced. Relicensing the combined work as GPLv3 does not let us strip
-    them. So every file carrying shairport-sync or Hammerton copyright keeps
-    its header verbatim, and the README says which parts are MIT-derived.
-    `libplist` is LGPL-2.1 and is linked, not merged, so it keeps its own
-    terms and its own notice.
+    **The obligation, which is the easy thing to get wrong:** relicensing the
+    whole does not relicense the parts. Every file keeps the copyright and
+    permission text it arrived with. `libplist` is linked, not merged, and
+    keeps its own LGPL-2.1 terms.
 
-    Not started. This is documentation and headers, not code, and it has no
-    bearing on whether the receiver works. It **is** gated to RAIL 18b: it has
-    to be right before an image is published, because publishing is what
-    triggers the obligations. See `docs/source-release.md`.
-
-    Note the separate, non-licence question recorded in `lib/rsakey.c`: the
-    Apple AirPort Express private key the classic RAOP path needs is Apple's,
-    not ours, and carrying it was a decision taken on its own terms. It is not
-    covered by either upstream licence and should not be described as though
-    it were.
+    **Not a licence question:** `lib/airport_key.h` is Apple's AirPort Express
+    private key, covered by none of the above, included on the owner's
+    explicit decision. `lib/rsakey.c` carries the reasoning. It is still
+    gated on RAIL 18b in the sense that publishing an image is what triggers
+    any source obligation at all.
 
 ## Distribution (new, 13 October)
 

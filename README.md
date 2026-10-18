@@ -103,7 +103,12 @@ VS Code tries to index 400 GB and falls over.
 
 ## Testing the AirPlay receiver on the bench
 
-The image ships an AirPlay receiver (see [docs/airplay.md](docs/airplay.md)).
+The image ships **BearPortExpress**, our AirPlay receiver — a fork of
+[UxPlay](https://github.com/FDH2/UxPlay) with classic AirPlay 1 / RAOP support
+added by reading
+[shairport-sync](https://github.com/mikebrady/shairport-sync). Thanks to both
+projects; neither of them is responsible for our bugs. GPL-3.0-or-later. See
+[docs/airplay.md](docs/airplay.md).
 Most of it can only be exercised by a real Apple device, with one exception
 that matters because it needs none.
 

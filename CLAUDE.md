@@ -412,13 +412,16 @@ worth knowing before touching audio on this box again:
 
 ### AirPlay is UxPlay now (2026-09-30), and the fork is BearPortExpress (2026-10-17)
 
-**The AirPlay receiver fork is named BearPortExpress** — our fork of UxPlay
-plus the shairport-sync-derived code in it. The Android app wrapper keeps the
-name `AirPlayReceiver`. Attribution to both upstreams is required and
-prominent, the licence is **GPL-3.0-or-later** (the more restrictive of
-UxPlay's GPLv3 and shairport-sync's MIT, which are compatible), and MIT
-notices must be preserved rather than replaced. RAIL 27 has the detail and
-the obligations; it is gated on RAIL 18b.
+**The AirPlay receiver fork is named BearPortExpress** (2026-10-17); the
+Android app wrapper keeps the name `AirPlayReceiver`. Licence is
+**GPL-3.0-or-later**, the most restrictive in a tree that is mostly
+LGPL-2.1-or-later from shairplay with MIT parts (srp, alac) and a little GPL
+— all mutually compatible. Attribution to UxPlay, shairport-sync, shairplay,
+Hammerton and Cocagne is in the fork's README, which leads with it and keeps
+upstream's README below rather than replacing it. **Relicensing the whole
+does not relicense the parts**: every file keeps its own notice. Done, RAIL 27.
+`lib/airport_key.h` is Apple's key and is not covered by any of this; see
+`lib/rsakey.c`.
 
 
 Shairport was replaced the same day it started working, because the goal is
