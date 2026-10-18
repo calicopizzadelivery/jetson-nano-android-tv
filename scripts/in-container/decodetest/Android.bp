@@ -1,7 +1,12 @@
 cc_binary {
     name: "decodetest",
     srcs: ["decodetest.cpp"],
-    shared_libs: ["libmediandk", "liblog"],
+    // libmediandk carries AImageReader; libnativewindow is the ANativeWindow
+    // it hands back for -s (Surface output).
+    shared_libs: ["libmediandk", "libnativewindow", "liblog"],
+    // NdkImageReader.h includes <cutils/native_handle.h>, which is not on a
+    // vendor module's default include path.
+    header_libs: ["libcutils_headers"],
     cflags: ["-Wall", "-Werror"],
     vendor: true,
 }

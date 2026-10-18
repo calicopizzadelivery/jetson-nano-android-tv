@@ -174,9 +174,26 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 
 ## Can be done on the bench now
 
-13. **VP9 and MPEG-2 decode** with Surface output. They are "unproven, not
-    failed", because `decodetest` decodes to ByteBuffers. See CLAUDE.md,
-    "Hardware codecs".
+13. **VP9 is answered; MPEG-2 still needs a clip.** *18 October.*
+    `decodetest` grew a `-s` flag that decodes to a Surface, supplied by
+    `AImageReader` — a real `ANativeWindow` with no display, whose frames can
+    be acquired back, so a count under `-s` is evidence pictures were produced
+    rather than merely that input was accepted.
+
+    **The hypothesis it was built to test turned out to be wrong, which is the
+    useful part.** VP9 does not need a Surface: it decodes in both modes, on
+    real VP9 content, at 320x240 (712 fps) and 854x480 (257 fps). H.264 in
+    both modes confirms the Surface path itself is sound. So the September
+    `ERROR(0x80001020)` with zero frames was clip-specific — most plausibly a
+    VP8 file fed to the VP9 component by forcing the name — and CLAUDE.md's
+    codec table, which had said VP9 fails since September, is corrected.
+
+    **MPEG-2 remains untested, and cannot be tested here**: no `.m2v`, `.mpg`
+    or transport stream exists anywhere in the tree, and thebe has no ffmpeg
+    to generate one. It needs a clip from outside. Lower stakes than VP9 — on
+    a 2026 media box MPEG-2 is DVD rips and old broadcast captures, where VP9
+    is YouTube.
+
 ~~14. **A virtual BLE remote** on the emulator (Bumble and Rootcanal).~~
     *Closed 18 October as superseded, not done.* Its purpose was to answer
     whether BLE pairing works on ARM64 Tegra without a radio fitted. Real
