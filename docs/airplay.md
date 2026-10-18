@@ -765,6 +765,37 @@ to shairport's classic behaviour and are harmless, **but none of them fixed
 anything** -- Apple Music already worked without them, and system audio was
 never going to take that path. Recorded so nobody credits them later.
 
+### Testing the classic path offline
+
+    ./scripts/airplay/classic-selftest.sh [seconds]
+
+No Apple device, no LAN. `scripts/in-container/raopsend` streams a 440 Hz tone
+to the receiver's own RTSP port as uncompressed L16, and the script reads it
+back off the MS2109 and checks it **by frequency**. It runs on the Jetson
+because RAOP carries audio over UDP and `adb forward` is TCP only.
+
+A known-frequency source is what makes this worth having. The whole wrong-key
+episode above turned on the fact that a level meter, a byte counter and a
+working-looking screen all failed to distinguish music from noise. A Goertzel
+at 440 Hz against the neighbouring bands cannot be fooled the same way: a
+passing run on 18 October read 440 Hz at 6504 with the next loudest band at
+30, and peak 17999, which is exactly the amplitude `raopsend.c:651` generates.
+
+**What it covers**: `ANNOUNCE` and the SDP parse, the unencrypted branch, the
+`Transport:` SETUP, `RECORD`, the RTP receive loop, the L16 render path, and
+AudioTrack through to HDMI.
+
+**What it does not**: the RSA unwrap of `a=rsaaeskey` and `Apple-Challenge`
+signing, which only a real sender exercises, and the ALAC decode path, since
+raopsend has no ALAC encoder. Those still need a Mac.
+
+This is also why the handler accepts L16 at all. `a=rtpmap` picks the codec --
+`AppleLossless` to the ALAC decoder, `L16` straight through with a per-sample
+byte swap, because L16 is network byte order per RFC 3551 and AudioTrack wants
+host order. `a=fmtp` is read only for ALAC: its twelve values describe ALAC
+alone, and shairport's habit of treating the mere *presence* of fmtp as "this
+is ALAC" regardless of rtpmap is a trap raopsend's own source documents.
+
 ### Two things I was wrong about, recorded so they are not repeated
 
 **"`a=fpaeskey` means no leaked key is needed."** Said twice, on the strength

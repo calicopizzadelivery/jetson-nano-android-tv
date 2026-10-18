@@ -352,6 +352,14 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
     autocorrelation 0.962 / 0.995 on the two audio paths, 0 silent windows in
     119 on both, mirroring clean at 1920x1080 through `OMX.Nvidia.h264.decode`.
 
+    **A bench harness came out of this.**
+    `./scripts/airplay/classic-selftest.sh` streams a 440 Hz tone through the
+    whole classic path with no Apple device and no LAN, and checks it by
+    frequency off the HDMI capture. It covers ANNOUNCE, the SDP parse, the
+    unencrypted branch, the Transport SETUP, RECORD, the RTP loop and the L16
+    render path; it does not cover the RSA unwrap, Apple-Challenge or ALAC,
+    which need a real sender.
+
     **Still untested:** iPhone audio over AirPlay 2. It uses the same
     `_raop._tcp` record that `et` and `ek` were changed in, so it is the last
     untested regression from this work.
