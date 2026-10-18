@@ -8,6 +8,21 @@ Last reviewed 4 October 2026.
 
 ## Wi-Fi and Bluetooth
 
+**The goal is three verified cards**, so a user is not forced onto one part
+and a shortage of any single module does not block a build:
+
+| card | Wi-Fi | Bluetooth | state |
+| --- | --- | --- | --- |
+| **Intel 8265** (`8086:24fd`) | works | works, BLE pairs | **verified** 4 and 8 October — the reference |
+| **BCM4356** (`14e4:43ec`) | untried | firmware ships | **item 1a** — card needed |
+| **RTL8822CE** (`10ec:c822`) | driver in-tree, branch never run | needs `rtl_bt` firmware | **item 3** — card needed; firmware can be pinned first |
+
+Only the first row is an observation. The other two are inferences from what
+is in the image, and this repo has already shipped one confident wireless
+claim that was exactly backwards (RAIL 28) — so do not repeat them as fact
+until a card has actually been fitted.
+
+
 An **Intel Wireless-AC 8265** is fitted as of 4 October, and **Wi-Fi works**:
 cold boot, firmware loads, `wlan0` scans both bands, and the picker in
 Settings lists real access points. Everything about how, and the five defects
@@ -26,15 +41,31 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
      The file is in `device/nvidia/foster`, which is **not one of our forks** —
      so this costs a thirteenth fork, or a way to override one file from
      porg. Worth doing before any second card is tested.
-1a. **Test the Broadcom cards when they arrive.** BCM94356Z (`14e4:43ec`) is
-   the only chip whose Bluetooth firmware the image already ships
-   (`brcmfmac4356-pcie.bin`, `BCM4356A3.hcd`), so it is the card that should
-   make a SHIELD remote pair without any further firmware work — which is the
-   fastest route to item 2. Check: that `perform_enumeration` reports
-   `0x14e4`, that the Broadcom branch of `load_modules` picks the right
-   module for the device id, that the Cypress stack this time is *kept* rather
-   than unloaded, and that Bluetooth comes up where Intel's does not. Then
-   compare 5 GHz throughput against the 8265.
+1a. **Verify a BCM4356 end to end.** *Card needed.* The goal across 1a and
+   3 is **three wireless cards a user can buy with confidence**, so nobody is
+   forced onto one part. The Intel 8265 is card one and is proven (Wi-Fi 4
+   October, Bluetooth and BLE 8 October); this is card two.
+
+   **It should be the easiest of the three**, because it is the only chip
+   whose Bluetooth firmware the image already ships — `brcmfmac4356-pcie.bin`
+   and `BCM4356A3.hcd`, pulled from the SHIELD OTAs. Nothing needs adding.
+   Buy a Lenovo **BCM94356Z**, FRU `00JT478`, M.2 2230 Key A/E (`14e4:43ec`).
+
+   What to check, in order:
+   - `perform_enumeration` reports `0x14e4` and the Broadcom branch of
+     `load_modules` picks the right module for the device id. Both branches
+     are ours and have **never run on a Broadcom card**.
+   - The Cypress stack is *kept* this time rather than unloaded — see the
+     `lkm_loader_target.sh` note under item 1.
+   - Wi-Fi associates and passes traffic; compare 5 GHz throughput with the
+     8265, which is the reference.
+   - Bluetooth comes up, and a SHIELD remote pairs over BLE. This is where
+     it should beat the 8265's history rather than merely match it.
+
+   **Caveat worth stating before anyone buys one on this entry's say-so:** the
+   claim that it works is an inference from "its firmware is present", not an
+   observation. No Broadcom card has ever been in this board.
+
 1b. ~~**Bluetooth on the Intel 8265.**~~ *Closed 4 October.* The adapter
    reaches ON at boot. One sepolicy line: AOSP grants the HAL
    `self:bluetooth_socket`, a class that only exists from Linux 4.13, so on
@@ -84,16 +115,33 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
    - **Rumble over BLE.** Unproven, and `bta_hh_co` logs
      `Invalid event from internal uhid-dev: 115` repeatedly, which is likely
      the output report. See `docs/wireless.md`.
-3. **Bluetooth on an RTL8822CE.** Its Bluetooth half is on USB and needs
-   Realtek firmware. Looked at 1 October: porg uses the generic `btlinux`
-   HAL, which drives whatever the kernel's `btusb` brings up, and the image
-   has `btusb` and `btrtl`. What it lacks is the firmware:
-   `rtl_bt/rtl8822cu_fw.bin` and `rtl8822cu_config.bin` from
-   linux-firmware. Realtek's own `rtk_btusb.ko` also ships and loads, and
+3. **Verify an RTL8822CE end to end.** *Card needed; some of it can be
+   prepared first.* Card three, and the interesting one for cost: ~$8-12,
+   M.2 2230 Key E, and sold everywhere.
+
+   **Wi-Fi.** The driver is built in-tree (`rtl8822ce.ko` from
+   `kernel/nvidia/nvidia`) and our `wifi_loader.sh` fix added Realtek PCIe
+   detection (`0x10ec`) and an insmod branch for `10ec:c822`. That branch has
+   **never executed**. Note the old "RTL8822CE tested, does not work" in this
+   repo's history was the loader defects — it insmodded from a path that does
+   not exist on this build — and not the card.
+
+   **Bluetooth.** Its Bluetooth half is on USB. porg uses the generic
+   `btlinux` HAL, which drives whatever `btusb` brings up, and the image has
+   `btusb` and `btrtl`. What it lacks is firmware: `rtl_bt/rtl8822cu_fw.bin`
+   and `rtl8822cu_config.bin`. Realtek's own `rtk_btusb.ko` also ships and
    would compete with `btusb` for the device, so it probably has to stay
-   unloaded. Likely a firmware drop plus a module-list change, but untested.
-   Until then, a box meant to be used with a Bluetooth remote needs the
-   Broadcom card.
+   unloaded.
+
+   **This half can be done now, without a card.** The firmware pins exactly
+   like the Intel blobs did: add both files to
+   `scripts/in-container/Firmware/firmware.json` with their sha256 and their
+   licence file, and `prebuilt_firmware.py` fetches them into
+   `/vendor/firmware` on every build. Doing it in advance turns the card test
+   into plug-in-and-see rather than a firmware hunt with the hardware already
+   on the bench. Note Realtek firmware has its own licence terms, which have
+   to ship beside it the way Intel's now do.
+
 4. **Bluetooth audio and controllers on real hardware.** The Audio output tile
    is verified against a virtual A2DP speaker only
    (`docs/emulator-bluetooth.md`). Controllers matter for game streaming, below.
