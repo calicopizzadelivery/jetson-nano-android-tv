@@ -101,6 +101,60 @@ VS Code tries to index 400 GB and falls over.
 
 ---
 
+## Testing the AirPlay receiver on the bench
+
+The image ships an AirPlay receiver (see [docs/airplay.md](docs/airplay.md)).
+Most of it can only be exercised by a real Apple device, with one exception
+that matters because it needs none.
+
+### `raopsend` — a classic RAOP sender you can run on the device
+
+`scripts/in-container/raopsend` is a small AirPlay 1 / RAOP sender written for
+this project. It generates its own 440 Hz tone and carries its own cover art,
+so it needs no media files, no Mac, no iPhone and no LAN:
+
+```bash
+m raopsend                                    # in the build container
+./scripts/airplay/classic-selftest.sh 10      # push it, stream, verify
+```
+
+It runs **on** the Jetson rather than the host, because RAOP carries audio
+over UDP and `adb forward` is TCP only.
+
+Two choices keep it short. It sends uncompressed `L16/44100/2`, so there is no
+ALAC encoder; and a stream carrying neither `a=aesiv` nor `a=rsaaeskey` is
+treated as unencrypted, so there is no key exchange to implement.
+
+### Why the test checks a frequency, not a level
+
+`classic-selftest.sh` records the Jetson's HDMI output through the MS2109
+capture dongle and runs a Goertzel filter at 440 Hz against its neighbouring
+bands. That is deliberate, and the project has earned the lesson twice:
+
+- A Bluetooth **byte counter** once "proved" a working audio chain that was
+  in fact completely silent — starting a stream wakes A2DP, and SBC silence
+  costs the same bytes as signal.
+- A **wrong session key** once produced a convincing now-playing screen with
+  correct metadata, cover art, track changes and a healthy peak level, while
+  rendering uniformly random bytes.
+
+A level meter, a byte counter and a screenshot all fail to tell signal from
+noise. A known-frequency source does not: a passing run reads 440 Hz at 6504
+with the next loudest band at 30, and a peak of 17999 — exactly the amplitude
+`raopsend.c` generates.
+
+### What it covers, and what it does not
+
+**Covers**: `ANNOUNCE` and its SDP parse, the unencrypted branch, the
+`Transport:` SETUP, `RECORD`, the RTP receive loop, the L16 render path, and
+AudioTrack through to HDMI.
+
+**Does not cover**: the RSA unwrap of `a=rsaaeskey`, `Apple-Challenge`
+signing, and the ALAC decode path — those need a real sender. A green run
+means the plumbing works, not that Apple Music does.
+
+---
+
 ## Before you buy hardware
 
 **[docs/jetson-nano-hardware-plan.md](docs/jetson-nano-hardware-plan.md)** is
@@ -190,9 +244,18 @@ it's worth letting the first one grind.
     ├── host-setup.sh                 one-time root prerequisites
     ├── jetson-build                  host-side driver (run this)
     ├── probe.sh                      read-only host report
+    ├── airplay/
+    │   ├── classic-selftest.sh       440 Hz through the classic RAOP path
+    │   ├── push-receiver.sh          rebuild -> device, no flash
+    │   ├── preflight.sh              bench readiness checks
+    │   ├── watch.sh                  follow an AirPlay session live
+    │   ├── mdns_probe.py             what we advertise, as published
+    │   ├── tone_check.py             frequency check on a capture
+    │   └── tvnav.py                  drive the leanback UI headlessly
     └── in-container/
         ├── doctor.sh                 environment sanity checks
         ├── sync.sh                   repo init + sync
         ├── extract.sh                breakfast + blob extraction
-        └── build.sh                  mka bacon
+        ├── build.sh                  mka bacon
+        └── raopsend/                 classic RAOP sender, runs on the device
 ```
