@@ -622,11 +622,11 @@ Remaining:
    (`card 2: MS2109`, S16_LE 48 kHz stereo), so `arecord -D hw:MS2109,0` is a
    real test. It only receives 2-channel LPCM, so it cannot validate
    multichannel or Dolby/DTS bitstream passthrough.
-2. `/dlcache` is **still empty** — this first extract downloaded straight to
-   the container's `/tmp`. `-c/--cache-dir` means "extract from an
-   already-primed cache" and aborts on an empty one; `-p/--prime-cache` is
-   what fills it. `extract.sh` now primes before extracting, but priming costs
-   the ~20 GB download again, so it will only happen on the next `extract`.
+2. ~~`/dlcache` is empty.~~ **Primed 18 October: 12 GB, sixteen sources.** A
+   tree wipe or `repo sync` no longer re-downloads them. The mechanism, if it
+   ever needs repeating: `-c/--cache-dir` means "extract from an already-primed
+   cache" and aborts on an empty one, while `-p/--prime-cache` is what fills
+   it; `extract.sh` primes first when `-c` finds nothing.
 
 ## Open items and eMMC wear (2026-09-30)
 

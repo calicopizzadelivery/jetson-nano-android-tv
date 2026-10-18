@@ -291,7 +291,18 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 ~~18d. **The box calls itself "SHIELD Android TV".**~~ Done 30 September: it
     is JetsonTV, for the device name, Bluetooth and AirPlay. See
     `docs/branding.md`.
-19. **Housekeeping.** `/dlcache` is still unprimed (next `extract`).
+~~19. **Housekeeping.**~~ *Closed 18 October.* `/dlcache` is primed: **12 GB
+    across sixteen sources** — the four SHIELD OTAs, the L4T trees for
+    t186/t194/t210/t234, NVIDIA's licensed TLK binaries, and the stock
+    images — so a tree wipe or a `repo sync` no longer costs that download
+    again, which is the whole reason the cache lives outside the tree.
+
+    Verified after the run that the forks survived: `external/uxplay` is still
+    at our commit, not LineageOS's. That is the one genuinely dangerous
+    failure here — a sync putting the forks back on upstream produces an image
+    missing our work with no error — and it is what `local-manifest.sh
+    --check` exists to catch.
+
     *`patches/README.md` was brought up to date 3 October: every entry now
     carries a status, the DocumentsUI, atv, UxPlay and libplist changes are
     exported, and the Shairport-era porg entries are marked superseded.*
