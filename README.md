@@ -165,9 +165,22 @@ means the plumbing works, not that Apple Music does.
 **[docs/jetson-nano-hardware-plan.md](docs/jetson-nano-hardware-plan.md)** is
 the part most likely to save you weeks. The short version:
 
-- The **only** supported wireless card is a **BCM4356** (buy a Lenovo
-  BCM94356Z, FRU `00JT478`). The Intel AC8265 that every Nano vendor sells is
-  *not* supported, and the RTL8822CE was tested and does not work.
+- **Wireless: buy an Intel Wireless-AC 8265** (8265NGW, `8086:24fd`, M.2 2230
+  Key E) — the card every Nano vendor already sells. Wi-Fi and Bluetooth both
+  work, including BLE pairing for a remote, verified on hardware 4 and 8
+  October 2026. **This repo used to say the opposite**, following LineageOS's
+  own guidance; that advice was correct for a stock build and is wrong for
+  this one. Five defects in NVIDIA's wireless bring-up had to be fixed first
+  — the shortest version is that `wifi_loader.sh` defines
+  `perform_enumeration()` and `load_modules()` and calls neither, upstream
+  included, so that path had never executed on any board.
+  [docs/wireless.md](docs/wireless.md) has all of it.
+  - **BCM4356** (Lenovo BCM94356Z, FRU `00JT478`) — its Bluetooth firmware is
+    the only Broadcom one in the image, so it should work, but **nobody has
+    ever put one in this board**. Untested, not recommended over the 8265.
+  - **RTL8822CE** — driver is in-tree and the cards are cheap and everywhere,
+    but it has never run since the loader was fixed, and the image ships no
+    Realtek *Bluetooth* firmware. Wi-Fi might work; Bluetooth will not.
 - Both the developer (microSD, P3448-0000) and production (16 GB eMMC,
   P3448-0002) modules work from the same flash package.
 - Permanently out of reach, for cryptographic rather than packaging reasons:

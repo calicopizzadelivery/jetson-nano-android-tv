@@ -164,6 +164,30 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
      Mac audio output (`Sound > output`), which should give AAC-LC -- the one
      codec of the three not yet seen.
 
+## Documentation accuracy (new, 18 October)
+
+28. **Audit the repo for hardware claims that are no longer true.** Found by
+    the project owner reading the README: it said the **only** supported
+    wireless card is a BCM4356 and that the Intel AC8265 is unsupported —
+    exactly backwards. The 8265 is the card that works and the one every Nano
+    vendor sells; the BCM4356 has never been fitted to this board at all.
+    `docs/jetson-nano-hardware-plan.md` carried the same conclusion, quoting
+    LineageOS maintainers from 2023-24 who were right about a stock build.
+
+    Both are corrected (README rewritten, hardware plan marked superseded with
+    its research kept). **What is not done is the sweep**: if those two were
+    wrong for six weeks on a public repo, others may be. The pattern to look
+    for is a confident claim inherited from upstream or from an early session
+    that a later finding quietly overturned — the same shape as the VP9 and
+    MPEG-2 codec table in CLAUDE.md (RAIL 13), which called both codecs broken
+    from September until 18 October.
+
+    Worth checking specifically: `docs/streaming-targets.md`,
+    `docs/prebuilt-apps.md`, the "Key findings" and "Hard blockers" sections of
+    `CLAUDE.md`, and anything in `docs/` written before a bring-up that has
+    since succeeded. This matters more now that the repo is public and tagged:
+    a reader buys hardware on these claims.
+
 ## Waiting on other hardware
 
 8. **HDMI audio beyond stereo.** Multichannel LPCM and Dolby/DTS passthrough

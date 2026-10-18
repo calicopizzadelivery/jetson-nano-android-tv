@@ -2,7 +2,27 @@
 
 *Scope narrowed 10 Sep 2026: target is Jetson Nano 4GB (mix of production eMMC modules and developer SD modules). Use case is Kodi / Plex / Google Cast / emulation.*
 
-## Bluetooth — buy a BCM4356 card
+## Wireless — superseded, 18 October 2026
+
+> **Read [wireless.md](wireless.md) instead for anything you are about to buy.**
+>
+> This section is kept as written in September 2026, because the research in
+> it is sound and the sourcing detail is still useful. Its *conclusion* is
+> not: it recommends a BCM4356 and warns off the Intel AC8265, which is the
+> opposite of what this build now supports.
+>
+> What changed is that the advice below was LineageOS's, and correct for a
+> stock LineageOS build. On **this** tree the Intel 8265 works — Wi-Fi from
+> 4 October, Bluetooth and BLE remote pairing from 8 October — after five
+> defects in NVIDIA's wireless bring-up were fixed, the first being that
+> `wifi_loader.sh` calls neither of the two functions that do the work.
+>
+> The BCM4356 is still the only part whose Bluetooth firmware ships, so it
+> *should* work, but **no Broadcom card has ever been fitted to this board**.
+> It is untested, not proven. The RTL8822CE's "tested, does not work" below
+> was the loader defects rather than the card, and it has not been retried.
+
+## Bluetooth — buy a BCM4356 card *(September 2026 research; see above)*
 
 The LineageOS `porg` tree ships firmware for exactly two Broadcom parts and nothing else. From `device/nvidia/tegra-common/extract/file.list`:
 
