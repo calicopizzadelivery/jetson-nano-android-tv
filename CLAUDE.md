@@ -562,20 +562,22 @@ Two levels of fix:
 | HEVC decode | `OMX.Nvidia.h265.decode` | 1920x1080, via a MediaProvider thumbnail |
 | VP8 decode | `OMX.Nvidia.vp8.decode` | 1920x1080 at 116.7 fps |
 | VP9 decode | `OMX.Nvidia.vp9.decode` | **works** — 320x240 at 712 fps, 854x480 at 257 fps |
-| MPEG-2 decode | `OMX.Nvidia.mpeg2v.decode` | still untested: no MPEG-2 clip exists anywhere in the tree |
+| MPEG-2 decode | `OMX.Nvidia.mpeg2v.decode` | **works** — 720x576 at 110 fps, 143 frames |
 | AV1 | — | absent, as expected on T210 |
 
-**VP9 works, and the earlier "ERROR(0x80001020), 0 frames" here was wrong.**
-Settled 18 October by adding Surface output to `decodetest` (`-s`, via
-`AImageReader`) and then finding the Surface was not the issue at all: VP9
-decodes fine in **both** modes, on real VP9 content, at two resolutions. The
-September failure was clip-specific — most likely a VP8 file fed to the VP9
-component by forcing the name — not a codec limitation. Do not repeat the old
-claim.
+**Every codec above works. The earlier "ERROR(0x80001020), 0 frames" for VP9
+and MPEG-2 was wrong on both counts** — settled 18 October. `decodetest` grew
+Surface output (`-s`, via `AImageReader`) to test the theory that those two
+components required one; they do not. Both decode in **both** modes on real
+content of their own format:
 
-MPEG-2 is genuinely untested rather than failing: there is no `.m2v`, `.mpg`
-or transport stream anywhere in the tree, and thebe has no ffmpeg to make one.
-It needs a clip from somewhere.
+- VP9 — `bear-vp9.webm` 320x240 and a 854x480 clip, 712 and 257 fps
+- MPEG-2 — a 720x576 PAL program stream, 143 frames at 110 fps
+
+The September failures were **clip-specific**, almost certainly the wrong
+bitstream forced through a component by name. Do not repeat the old claim, and
+when a decoder reports `ERROR(0x80001020)` with zero frames, suspect the clip
+before the codec.
 
 Note `rendered` is lower than `frames` under `-s` (64/83, 20/25, 236/300).
 That is `AImageReader` backpressure at `maxImages=8`, not dropped decode.

@@ -97,11 +97,19 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 4. **Bluetooth audio and controllers on real hardware.** The Audio output tile
    is verified against a virtual A2DP speaker only
    (`docs/emulator-bluetooth.md`). Controllers matter for game streaming, below.
-5. **The Bluetooth crash loop at boot.** With no radio, `com.android.bluetooth`
-   aborts in `hci_backend_aidl.cc:34` several times per boot. Each abort writes
-   about 660 KB of tombstone plus dropbox copies. It should stop once a
-   controller answers. Decide what a box with no radio does: probably keep
-   Bluetooth disabled rather than crash-loop. See `docs/emmc-writes.md`.
+~~5. **The Bluetooth crash loop at boot.**~~ *Closed 18 October by the radio,
+   as the item predicted.* With an Intel 8265 fitted and a controller
+   answering, there is no loop: **10 h 33 m uptime with zero tombstones and
+   zero Bluetooth dropbox entries**, Bluetooth `state: ON` throughout. The
+   660 KB-per-abort write cost in `docs/emmc-writes.md` therefore applies only
+   to a box with no radio.
+
+   The open half of the question — what a radio-less box *should* do — is moot
+   for the supported configuration, which needs a radio anyway: the setup
+   wizard's accessory step wants a BLE remote. If anyone builds one without,
+   the answer is to set `config.disable_bluetooth` in the product makefile
+   rather than let the stack crash-loop.
+
 6. **Miracast sink**, for Windows and Android senders. It needs Wi-Fi
    Direct; the 8265 advertises a `P2P-device` interface, so this is now
    startable. See `docs/streaming-targets.md`.
@@ -174,25 +182,33 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 
 ## Can be done on the bench now
 
-13. **VP9 is answered; MPEG-2 still needs a clip.** *18 October.*
-    `decodetest` grew a `-s` flag that decodes to a Surface, supplied by
-    `AImageReader` — a real `ANativeWindow` with no display, whose frames can
-    be acquired back, so a count under `-s` is evidence pictures were produced
-    rather than merely that input was accepted.
+~~13. **VP9 and MPEG-2 decode** with Surface output.~~ *Closed 18 October,
+    and both codecs work.* `decodetest` grew a `-s` flag that decodes to a
+    Surface supplied by `AImageReader` — a real `ANativeWindow` with no
+    display, whose frames are acquired back, so a count under `-s` is evidence
+    pictures were produced rather than merely that input was accepted.
 
-    **The hypothesis it was built to test turned out to be wrong, which is the
-    useful part.** VP9 does not need a Surface: it decodes in both modes, on
-    real VP9 content, at 320x240 (712 fps) and 854x480 (257 fps). H.264 in
-    both modes confirms the Surface path itself is sound. So the September
-    `ERROR(0x80001020)` with zero frames was clip-specific — most plausibly a
-    VP8 file fed to the VP9 component by forcing the name — and CLAUDE.md's
-    codec table, which had said VP9 fails since September, is corrected.
+    **The theory it was built to test was wrong, which is the finding.**
+    Neither component needs a Surface. Both decode in both modes, on real
+    content of their own format:
 
-    **MPEG-2 remains untested, and cannot be tested here**: no `.m2v`, `.mpg`
-    or transport stream exists anywhere in the tree, and thebe has no ffmpeg
-    to generate one. It needs a clip from outside. Lower stakes than VP9 — on
-    a 2026 media box MPEG-2 is DVD rips and old broadcast captures, where VP9
-    is YouTube.
+    | codec | clip | result |
+    | --- | --- | --- |
+    | VP9 | `bear-vp9.webm` 320x240 | 83 frames, 712 fps |
+    | VP9 | 854x480 | 25 frames, 257 fps |
+    | MPEG-2 | 720x576 PAL program stream | 143 frames, 110 fps |
+    | H.264 (control) | 320x240 | 300 frames, 671 fps |
+
+    So the September `ERROR(0x80001020)` with zero frames was **clip-specific**
+    — almost certainly the wrong bitstream forced through a component by name
+    — and CLAUDE.md's codec table, which had called both of them broken since
+    September, is corrected. The general lesson is in it too: when a decoder
+    reports that error with zero frames, suspect the clip before the codec.
+
+    The MPEG-2 clip came from `samples.ffmpeg.org/MPEG2/mm-short.mpg`
+    (2,048,000 bytes, sha256 8d71f453…), verified as a genuine MPEG-2 program
+    stream before use — `000001ba` pack header, five sequence headers. Nothing
+    in the tree had one and thebe has no ffmpeg to make one.
 
 ~~14. **A virtual BLE remote** on the emulator (Bumble and Rootcanal).~~
     *Closed 18 October as superseded, not done.* Its purpose was to answer
