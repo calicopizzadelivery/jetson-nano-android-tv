@@ -1,6 +1,24 @@
 // SPDX-FileCopyrightText: 2026 The LineageOS Project
 // SPDX-License-Identifier: Apache-2.0
 
+// The SPDX comment above documents the licence; it does NOT declare it to
+// Soong, so without the block below this module contributes nothing to the
+// image's NOTICE file and nothing appears for it under Settings > About >
+// Legal information. license_kinds is what the compliance tooling reads;
+// license_text is what a user can actually read on the device. This is the
+// same defect that left 44 LGPL files in external/uxplay uncredited until
+// 2026-10-18.
+package {
+    default_applicable_licenses: ["vendor_jetson-tv_AmbientDream_license"],
+}
+
+license {
+    name: "vendor_jetson-tv_AmbientDream_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["SPDX-license-identifier-Apache-2.0"],
+    license_text: ["LICENSE"],
+}
+
 android_app {
     name: "AmbientDream",
     srcs: ["src/**/*.java"],

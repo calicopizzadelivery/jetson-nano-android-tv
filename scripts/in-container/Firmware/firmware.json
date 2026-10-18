@@ -38,6 +38,20 @@
       "dest": "intel",
       "sha256": "3ca252ad20e8f76d6d906536bf9e5abe6654c657183584a48e90a0dcf40ac4d5",
       "why": "Device configuration loaded alongside ibt-12-16.sfi."
+    },
+    {
+      "name": "LICENCE.iwlwifi_firmware",
+      "path": "LICENCE.iwlwifi_firmware",
+      "dest": "",
+      "sha256": "16d5040c7cf851fc693b7542e20870935b99802533ea1bfd231c377a2305e5c5",
+      "why": "Intel's licence for the iwlwifi blob. Its terms require it to be redistributed WITH the firmware, so it ships beside it in /vendor/firmware rather than only being referenced."
+    },
+    {
+      "name": "LICENCE.ibt_firmware",
+      "path": "LICENCE.ibt_firmware",
+      "dest": "",
+      "sha256": "5181b0b51efc79d5acb2c9bb92042878fdbad97a92114d4ab5e32e2b5b52fce4",
+      "why": "Intel's licence for the Bluetooth (ibt) blobs, same requirement."
     }
   ]
 }

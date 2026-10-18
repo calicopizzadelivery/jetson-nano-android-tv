@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="dream_label">Ambient photos</string>
+    <string name="dream_label">Ambient Dream</string>
     <string name="credit_attribution">%1$s · public domain</string>
     <string name="credit_attribution_nocenter">public domain</string>
     <string name="credit_offline">Showing cached photos</string>
