@@ -200,9 +200,21 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
     copyleft code: the kernel, about two dozen AOSP userspace projects, our
     AirPlay stack and the four third-party apps. Each release needs its
     pinned manifest, a source bundle published beside the image, and a
-    pointer to it in the device's notices. The manifest, the bundle script
-    and the notice can be built now; the publishing waits for the first
-    release. See `docs/source-release.md`.
+    pointer to it in the device's notices. See `docs/source-release.md`.
+
+    **Two of the three are done, 18 October.** `releases/jetsontv-0.1.0.xml`
+    pins all 1177 projects to exact SHAs, every fork is tagged `v0.1.0`, and
+    all twelve of our pinned repos were verified fetchable from GitHub, so
+    the manifest reproduces rather than merely describing. The pointer is on
+    the device too: Settings > About > About JetsonTV carries the source URL
+    and the licence statement, and the image's own notices now credit every
+    licence in the tree.
+
+    **What is left is the source bundle itself** — the script that reads a
+    pinned manifest and writes `jetsontv-<version>-source.tar.xz`. Until that
+    exists, a user has the manifest and the repos but not the single archive
+    the GPL expects to sit beside a binary. No image has been published, so
+    nothing is owed yet; this is the last piece before one can be.
 18c. **Kodi's eMMC writes, once it has a real library:** thumbnails and its
     SQLite databases. Use `scripts/emmc-*`. Also HEVC playback in Kodi, which
     needs a clip made somewhere with an HEVC encoder.
