@@ -343,35 +343,39 @@ Found while reviewing the PIN gate, not by looking for them. Both predate
 anything we changed and both are reachable from any device on the LAN with
 the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
 
-24. **An unpaired device can crash the receiver with one request.**
-    `android/uxplay_jni.c` zeroes the callback struct and assigns 27 of them;
-    `on_video_stop`, `on_video_scrub`, `on_video_rate`, `on_video_play` and
-    `on_video_acquire_playback_info` (declared in `lib/raop.h`) are not among
-    them, and `raop_init` copies the struct verbatim with no defaults. They
-    are reached through the AirPlay-video/HLS handler table. The guard at
-    `lib/raop.c:279` does **not** keep an attacker out of it: the condition is
-    `!cseq && !raop->hls_support && !ble`, so a request that simply carries a
-    `CSeq` header routes straight past it into the ungated dispatch. Fix by
-    making the `hls_support` test independent of `CSeq`, and by giving the
-    unassigned callbacks null checks or stubs.
+~~24. **An unpaired device can crash the receiver with one request.**~~
+    *Done 18 October.* `raop_init` copied the embedder's callback struct
+    verbatim, so the six AirPlay-video callbacks the Android embedder does not
+    assign stayed NULL while `lib/http_handlers.h` called them from seven
+    unguarded sites. Fixed with no-op defaults in `raop_init` rather than
+    seven null checks: a check has to be remembered at every future call site,
+    a default cannot be forgotten. The second half is fixed too — the gate
+    meant to keep non-HLS builds out of those handlers read
+    `!cseq && !raop->hls_support && !ble`, so any request carrying a `CSeq`
+    header, which is every RTSP request, walked straight past it. The video
+    URLs are now refused outright when `hls_support` is off, independently of
+    `CSeq`. Two defences, not one.
 
-25. **An unpaired device can drop the owner's live session.**
-    `raop_init2(g_raop, 1, ...)` hard-wires `nohold`, so any `CSeq`-bearing
-    request from any host takes the branch at `lib/raop.c:293-298`:
-    `httpd_remove_known_connections` plus a video reset. That is the intended
-    behaviour for a shared television taking a new sender, but it needs no
-    authentication at all, so it is also a one-request denial of service
-    against whoever is watching. Decide whether a new sender should have to
-    pair before it can displace the current one.
+~~25. **An unpaired device can drop the owner's live session.**~~
+    *Narrowed 18 October; the residual is stated rather than closed.* `nohold`
+    let **any** `CSeq`-bearing request from anyone evict the live session — a
+    bare `OPTIONS` from a stranger ended whatever the owner was watching.
+    Eviction now happens only on a request that actually begins a session:
+    `ANNOUNCE`, `SETUP`, or a pairing/fp-setup `POST`. Every real sender opens
+    with one of those; a prober does not.
 
-    Smaller, same cause: `GET_PARAMETER` is ungated and returns the current
-    volume to anyone; `FLUSH` and `TEARDOWN` are ungated but are per-connection
-    no-ops without a live `conn->raop_rtp`.
+    **What is not fixed, and cannot be at that point in the flow:** a
+    determined device on the LAN can still displace the current session by
+    sending a genuine pairing request. The eviction happens on first contact,
+    before any authentication could have occurred, so "make it pair first" is
+    not expressible there. Closing it properly would mean deferring the
+    eviction until the new sender passes `pin_gate` at SETUP, which is a
+    larger change to the connection-slot logic. The bound is unchanged:
+    someone already on your network.
 
-    None of this is reachable from outside the LAN — AirPlay here has no
-    Bluetooth or AWDL transport — so the exposure is "someone already on your
-    network". That is the same bound as RAIL 7's brute-force note, and the
-    same decision applies.
+    The smaller siblings are unchanged and still true: `GET_PARAMETER` returns
+    the current volume to anyone, and `FLUSH`/`TEARDOWN` are ungated
+    per-connection no-ops.
 
 ## macOS Apple Music audio (new, 15 October)
 
