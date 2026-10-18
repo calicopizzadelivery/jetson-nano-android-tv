@@ -177,16 +177,40 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
 13. **VP9 and MPEG-2 decode** with Surface output. They are "unproven, not
     failed", because `decodetest` decodes to ByteBuffers. See CLAUDE.md,
     "Hardware codecs".
-14. **A virtual BLE remote** on the emulator (Bumble and Rootcanal). It would
-    exercise Android's BLE HID path, though not the Tegra kernel's.
-15. **UxPlay hardening pass.** Two findings remain: the mirroring codec
-    packet's parameter-set lengths are unchecked, and `X-Apple-Session-ID` on
-    RTSP reaches an `assert`. See `docs/airplay.md`, Security.
+~~14. **A virtual BLE remote** on the emulator (Bumble and Rootcanal).~~
+    *Closed 18 October as superseded, not done.* Its purpose was to answer
+    whether BLE pairing works on ARM64 Tegra without a radio fitted. Real
+    hardware answered that on 8 October: an Xbox Wireless Controller and a
+    2019 SHIELD remote both bonded over HID-over-GATT on an Intel 8265, and
+    `hid-jarvis-remote` drives all sixteen keys of the remote's layout. The
+    rig would re-answer a settled question. The emulator Bluetooth harness
+    itself still exists and is still useful for audio routing — see
+    `docs/emulator-bluetooth.md`.
+
+~~15. **UxPlay hardening pass.**~~ *Done 18 October.* Both remaining findings
+    fixed in the fork. The HEVC parameter-set sizes were read off the wire into
+    a **signed** short, so anything from 0x8000 up went negative and walked the
+    parse pointer backwards, with nothing bounding it against the end of the
+    payload; they are unsigned now and every advance is checked.
+    `X-Apple-Session-ID`'s allocation was covered by `assert()`, which is a
+    no-op because `-DNDEBUG` is a Soong global, so a failed `calloc` fell
+    through to a NULL `memcpy` on an attacker-supplied, unbounded header; it
+    answers 500 now.
+
 ~~16. **Pairing controls on the TV.**~~ Done 1 October: the Streaming tile
     turns the code on and off and lists and forgets paired devices. See
     `docs/airplay.md`, "Pairing with a PIN".
-17. **Shairport leftovers** in the porg fork: the `shairport` SELinux domain,
-    uid 7500, and the `interrupt` property label.
+~~17. **Shairport leftovers** in the porg fork.~~ *Done 18 October, and only
+    part of it was actually dead.* The `shairport` domain, `shairport_exec`
+    type and the binary's `file_contexts` labels are gone — that binary has not
+    been built since 30 September. But `shairport_prop` was **not** a leftover:
+    it is the label that makes every `persist.jetsontv.airplay.*` setting
+    writable, including the pin, open-audio and legacy-service controls.
+    Removing it with the rest would have silently broken all of them; it is
+    renamed `airplay_prop`. Uid 7500 is kept deliberately — a device flashed
+    before September may still own files as 7500, and dropping a uid underneath
+    existing files misbehaves only on upgrade.
+
 18. **eMMC write reduction.** See `docs/emmc-writes.md`.
 18a. **Write barriers on /data**, for routine power pulls. *Shelved 30
     September.* Measured cost: about 1-1.5 ms per fsync. The plan: porg ships
@@ -210,11 +234,24 @@ in NVIDIA's bring-up that had to be fixed first, is in `docs/wireless.md`.
     and the licence statement, and the image's own notices now credit every
     licence in the tree.
 
-    **What is left is the source bundle itself** — the script that reads a
-    pinned manifest and writes `jetsontv-<version>-source.tar.xz`. Until that
-    exists, a user has the manifest and the repos but not the single archive
-    the GPL expects to sit beside a binary. No image has been published, so
-    nothing is owed yet; this is the last piece before one can be.
+    **The bundle script landed 18 October**: `scripts/source-bundle.sh` reads
+    a pinned manifest and archives every copyleft project **at the commit the
+    manifest names**, adds this repo (GPL-3 counts the scripts that build and
+    install the work), writes a `MANIFEST.txt` recording what is included and
+    at which commit, and refuses to call an incomplete bundle complete — a
+    missing project is a non-zero exit, not a warning.
+
+    Proven on 0.1.0: **36 projects, 0 skipped, 429 MB compressed**, with
+    `external/uxplay` present at its pinned commit. The project list is the
+    one `compliance_listshare` produced over a real build, kept deliberately
+    broader than the strict minimum — angle, icu and freetype are flagged only
+    for a few files or a dual licence Android takes the permissive half of,
+    and including them costs a few hundred megabytes and removes the argument.
+
+    **So 18b is now a publishing step, not an engineering one.** Manifest,
+    device pointer and bundle all exist. What remains is attaching the bundle
+    to a GitHub Release beside an image, which cannot happen until there is an
+    image to publish (RAIL 22).
 18c. **Kodi's eMMC writes, once it has a real library:** thumbnails and its
     SQLite databases. Use `scripts/emmc-*`. Also HEVC playback in Kodi, which
     needs a clip made somewhere with an HEVC encoder.
