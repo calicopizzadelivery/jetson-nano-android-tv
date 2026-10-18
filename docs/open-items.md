@@ -563,7 +563,13 @@ that is in place.
     - Controllers: USB now; Bluetooth waits on items 2 and 4. See 21.
     - Audio and surround, and HDR (items 8 and 9).
     - Wi-Fi, once the radio is in.
-    - Steam Link, if it can be installed without the Play Store.
+    - ~~Steam Link.~~ **Out of scope, decided 18 October.** It is distributed
+      through the Play Store and this image has no Play, so there is nothing
+      for us to ship or test. A user who wants it can sideload an APK, which
+      is their call to make — worth knowing that Valve does not publish one
+      outside Play, so in practice that means a third-party mirror rather
+      than an official download. Not a gap in the box: Moonlight covers the
+      same need, is in the image, and is measured.
     The assessment below was written before measuring and is kept for
     comparison.
 21. **8BitDo pads over USB and 2.4 GHz.** Looked at 1 October. The kernel
@@ -648,8 +654,9 @@ measured on this box yet.
 - Moonlight may tune behaviour by device model, and this box reports
   `porg`/Jetson Nano, not a SHIELD.
 - There is no Play Store. Moonlight is available as an APK from its GitHub
-  releases and from F-Droid. Steam Link is distributed through the Play Store,
-  so getting it onto a box without Play is an open question.
+  releases and from F-Droid, which is how it is pinned in
+  `scripts/in-container/PrebuiltApps/apps.json`. Steam Link is Play-only and
+  is now out of scope (above).
 - Bluetooth controllers are the real gap until the radio arrives.
 
 **Test plan:** install Moonlight from its GitHub release. Pair it with a
