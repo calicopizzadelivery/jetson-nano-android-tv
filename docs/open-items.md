@@ -326,34 +326,38 @@ the PIN on, because `pin_gate` only covers `fp-setup` and `SETUP`.
 
 ## macOS Apple Music audio (new, 15 October)
 
-26. **Classic RAOP implemented; macOS audio plays. 17 October.** Measured off
-    the HDMI capture, not judged by ear: L/R non-zero ratio 1.000, lag-1
-    autocorrelation 0.978, 99.8% non-zero samples, 0 silent windows in 119,
-    0 packets held for lack of sync. The full account, including the two
-    answers that were wrong first, is in `docs/airplay.md`, "macOS audio:
-    classic RAOP, and how it was finally made to play".
+26. **Done, 18 October. Mirroring, system audio and Apple Music all work at
+    once.** No `legacyonly`, no sidecar. Full account in `docs/airplay.md`,
+    "macOS audio: two paths, and both work now".
 
-    What it needed, in order: `legacyonly` mode so the Mac stops demanding
-    FairPlay; `Apple-Challenge`/`Apple-Response` signing so it does not hang
-    up after OPTIONS; and the RSA unwrap of `a=rsaaeskey`.
+    The finding that resolved it: **macOS has two audio paths, not one.**
+    Only Apple Music's own menu uses classic RAOP (FairPlay `0x02`, needs the
+    RSA key). `Sound > Output` is an ordinary AirPlay 2 client on `0x03` and
+    needs none of the classic machinery. An earlier note here said all macOS
+    audio was classic; that was drawn from one test where both failed the same
+    way, before `et`/`ek` were touched.
 
-    **Regression-tested the same day:** Mac mirroring still works with
-    `legacyonly=0` — pairs, `fp-setup type 0x03`, `OMX.Nvidia.h264.decode`,
-    1920x1080 picture. The FairPlay version gate does not fire for it, because
-    mirroring negotiates `0x03` where Mac audio-only negotiates `0x02`.
+    | path | protocol | served by |
+    | --- | --- | --- |
+    | Apple Music menu | classic RAOP | `JetsonTV (Audio)` |
+    | `Sound > Output` | AirPlay 2 | `JetsonTV` |
+    | mirroring | AirPlay 2 | `JetsonTV` |
 
-    **Still open, and it is a decision rather than a bug:** mirroring and Mac
-    audio cannot both be served from one advertisement. `_airplay._tcp`
-    present means the Mac insists on FairPlay `0x02`, which cannot be
-    unwrapped; absent means mirroring has no transport. Both demonstrated.
-    The three ways out — a shairport sidecar as a second advertised service,
-    exposing the switch in Settings, or implementing the `0x02` derivation —
-    are costed in `docs/airplay.md`. **Nothing should ship until this is
-    decided**, because the default today silently has no Mac audio.
+    Apple Music needed a second `_raop._tcp` advertised as a legacy device
+    (`dnssd_register_legacy()`), because a sender that sees an AirPlay 2
+    service will not offer RSA. Both services share the RTSP port, so the PIN
+    gate, now-playing panel and renderers are the same for either.
 
-    **Not yet retested:** iPhone audio over AirPlay 2. It uses the same
+    Measured, not judged by ear: L/R non-zero ratio 1.000 and lag-1
+    autocorrelation 0.962 / 0.995 on the two audio paths, 0 silent windows in
+    119 on both, mirroring clean at 1920x1080 through `OMX.Nvidia.h264.decode`.
+
+    **Still untested:** iPhone audio over AirPlay 2. It uses the same
     `_raop._tcp` record that `et` and `ek` were changed in, so it is the last
     untested regression from this work.
+
+    **Known and not a defect:** system audio cannot connect to
+    `JetsonTV (Audio)` -- it will not speak classic RAOP. It does not need to.
 
 ## Naming and attribution (new, 17 October)
 

@@ -432,30 +432,32 @@ so do not reopen it.
 - **Verified with real Apple hardware (10-15 October).** An iPhone 13 Pro Max
   and a Mac both pair with the PIN and mirror; the Mac's extend mode works
   too, and mirroring carries its own audio. iPhone audio from Music works.
-  **macOS audio-only works as of 2026-10-17, but only in `legacyonly` mode,
-  which turns mirroring off.** Every audio path on a Mac — Apple Music's menu
-  and `Sound > Output` alike — uses classic AirPlay 1 / RAOP, now implemented
-  (`ANNOUNCE`, a `Transport:` SETUP, `Apple-Challenge` signing, and the RSA
-  unwrap of `a=rsaaeskey` with the AirPort Express key in
-  `external/uxplay/lib/airport_key.h`, tracked on the owner's decision).
+  **macOS audio works as of 2026-10-18, alongside mirroring.** The thing to
+  know: **macOS has two audio paths.** Only Apple Music's own AirPlay menu
+  uses classic AirPlay 1 / RAOP (FairPlay `0x02`, unwrapped with the AirPort
+  Express RSA key in `external/uxplay/lib/airport_key.h`, tracked on the
+  owner's decision). `Sound > Output` is an ordinary AirPlay 2 client on
+  `0x03` and needs none of that.
 
-  **The sender picks its key exchange by whether we advertise
-  `_airplay._tcp`, not by the `et` record** — five `et`/`ek` variants were
-  tested and ignored. So mirroring and Mac audio cannot both be served from
-  one advertisement: that is the open decision in RAIL 26, and the default
-  today silently has no Mac audio. `persist.jetsontv.airplay.legacyonly`
-  switches between them and needs root to set.
+  | path | protocol | served by |
+  | --- | --- | --- |
+  | Apple Music menu | classic RAOP | `JetsonTV (Audio)` |
+  | `Sound > Output` | AirPlay 2 | `JetsonTV` |
+  | mirroring | AirPlay 2 | `JetsonTV` |
 
-  Mirroring is regression-tested and unaffected: it negotiates FairPlay
-  `0x03` where Mac audio-only sends `0x02`, which `lib/playfair` cannot
-  unwrap. **Verify this path by structure, not level** — a wrong key produced
-  a convincing now-playing screen and a non-zero peak, and only the L/R
+  **A sender picks its key exchange by whether we look like AirPlay 2, not by
+  the `et` record** — five `et`/`ek` variants were tested and ignored. So
+  Apple Music needs a *second* `_raop._tcp` advertised as a legacy device
+  with none of the AirPlay 2 markers (`dnssd_register_legacy()`, default on).
+  Both share the RTSP port, so the PIN gate, now-playing panel and renderers
+  are the same either way.
+
+  **Verify this path by structure, not level** — a wrong key produced a
+  convincing now-playing screen and a non-zero peak, and only the L/R
   non-zero ratio (2.0 vs 1.0) and lag-1 autocorrelation (0.08 vs 0.98)
-  exposed it. Full account in `docs/airplay.md`. Mirroring
-  needs FairPlay and no open-source sender does it, so for bench work there
-  is also a debug-only **self-test** (`SELFTEST` action, modes `pcm` / `eld`
-  / `music`) that pushes a test card and a tone through the real renderers;
-  on porg all three were clean on HDMI, with video 0.0 ms from due.
+  exposed it. Full account, including two things asserted here that turned
+  out wrong, in `docs/airplay.md`.
+
 - **To iterate without a flash:** `adb root && adb remount`, push the app dir
   **and `/system/lib64/libuxplay_jni.so`** (the app's `lib/arm64` entry is
   only a symlink to it), then reboot.
